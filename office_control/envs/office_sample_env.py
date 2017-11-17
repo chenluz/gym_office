@@ -13,7 +13,7 @@ import os
 
 class OfficeSampleEnv(gym.Env):
 
-	def __init__(self, state_type="subjective", csv_file='office_control\envs\csv\environment_sample-positive.csv'):
+	def __init__(self, state_type="subjective", csv_file='office_control\envs\csv\environment_sample-human.csv'):
 		self.state_type = state_type
 		self.sample_env = self._load_sample(csv_file)
 		self.nR = len(set(self.sample_env["state"]))
@@ -40,7 +40,7 @@ class OfficeSampleEnv(gym.Env):
 		reward = self._get_reward(action)
 		self.cur_state = self.next_state
 		self.step_count += 1
-		if self.step_count > 500:
+		if self.step_count > 100:
 			self.is_terminal = True
 			self.step_count = 0
 		return ob, reward, self.is_terminal, {}
@@ -99,10 +99,6 @@ class OfficeSampleEnv(gym.Env):
 		possible_next_state = self.sample_env[((self.sample_env['state'] ==  self.cur_state ) 
 			& (self.sample_env['action'] == action))]
 		length = len(possible_next_state.index)
-		if(length == 0): # there is no such sample in the environment
-			self.next_state =  self.cur_state
-			self.is_terminal = True
-			return  self.next_state
 		index = np.random.choice(length)
 		self.next_state = possible_next_state['next state'].tolist()[index]
 		return self.next_state
@@ -113,10 +109,6 @@ class OfficeSampleEnv(gym.Env):
 		possible_reward= self.sample_env[((self.sample_env['state'] ==  self.cur_state ) 
 			& (self.sample_env['action'] == action) & (self.sample_env['next state'] == self.next_state))]
 		length = len(possible_reward.index) 
-		if(length == 0): # there is no such sample in the environment
-			self.is_terminal = True
-			return  -10 # a big negative number
-
 		index = np.random.choice(length)
 		reward = possible_reward['reward'].tolist()[index]
 		return reward

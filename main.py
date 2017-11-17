@@ -4,11 +4,11 @@
 import gym
 import time
 import numpy as np
-import MC.EpsilonGreedy as MCE
+#import MC.EpsilonGreedy as MCE
 import TD.QLearning as QL
 import FA.QLearning_FA as LQL
 from lib import plotting
-import envTest
+#import envTest
 import argparse
 import os
 
@@ -72,14 +72,14 @@ def main():
     env = gym.make(args.env)
 
     #Q, policy = MCE.mc_control_epsilon_greedy(env, num_episodes=500000, epsilon=0.1)
-    # Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon),  
-    #     float(args.epsilon_decay), output)
-    # plotting.plot_episode_stats(stats)
-    # print(Q)
-    estimator = LQL.Estimator(env)
-    stats = LQL.q_learning(env, estimator, int(args.num),  float(args.df),  float(args.epsilon),
-        float(args.epsilon_decay))
+    Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon),  
+        float(args.epsilon_decay), output)
     plotting.plot_episode_stats(stats)
+    print(Q)
+    # estimator = LQL.Estimator(env)
+    # stats = LQL.q_learning(env, estimator, int(args.num),  float(args.df),  float(args.epsilon),
+    #     float(args.epsilon_decay))
+    # plotting.plot_episode_stats(stats)
 
 
 if __name__ == '__main__':
