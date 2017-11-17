@@ -1,0 +1,6 @@
+README.md
+office_control.egg-info/PKG-INFO
+office_control.egg-info/SOURCES.txt
+office_control.egg-info/dependency_links.txt
+office_control.egg-info/requires.txt
+office_control.egg-info/top_level.txt
