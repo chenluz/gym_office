@@ -109,6 +109,7 @@ class OfficeSampleEnv(gym.Env):
 		possible_reward= self.sample_env[((self.sample_env['state'] ==  self.cur_state ) 
 			& (self.sample_env['action'] == action) & (self.sample_env['next state'] == self.next_state))]
 		length = len(possible_reward.index) 
+
 		index = np.random.choice(length)
 		reward = possible_reward['reward'].tolist()[index]
 		return reward
@@ -116,7 +117,7 @@ class OfficeSampleEnv(gym.Env):
 
 	def _reset(self):
 		if self.state_type == "subjective":
-			ob = 0
+			ob = np.random.choice([-3, -2, -1, 0, 1, 2, 3])
 		elif self.state_type == "physical":
 			ob = self._get_physical_state()
 		self.cur_state = ob
