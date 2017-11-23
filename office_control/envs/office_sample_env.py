@@ -16,7 +16,7 @@ class OfficeSampleEnv(gym.Env):
 	def __init__(self, state_type="subjective", csv_file='office_control\envs\csv\environment_sample-human.csv'):
 		self.state_type = state_type
 		self.sample_env = self._load_sample(csv_file)
-		self.nR = len(set(self.sample_env["state"]))
+		self.nS = 1
 		self.nA = len(set(self.sample_env["action"]))
 		self.cur_state = 0
 		self.next_state = 0 

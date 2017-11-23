@@ -4,11 +4,12 @@
 import gym
 import time
 import numpy as np
-#import MC.EpsilonGreedy as MCE
+import MC.EpsilonGreedy as MCE
 import TD.QLearning as QL
+import NN.DQN as DQN
 import FA.QLearning_FA as LQL
 from lib import plotting
-#import envTest
+import envTest
 import argparse
 import os
 
@@ -55,11 +56,11 @@ def main():
     parser = argparse.ArgumentParser(description='Run Reinforcment Learning on Chamber')
     parser.add_argument('--env', default='office_control-v1', help='Office env name')
     parser.add_argument('-o', '--output', default='chamber-v1', help='Directory to save data to')
-    parser.add_argument('--num', default=500, help='Number of Episodes')
+    parser.add_argument('--num', default=100, help='Number of Episodes')
     parser.add_argument('--df', default=1.0, help='Discount Factor')
     parser.add_argument('--alpha', default=0.5, help='Constant step-size parameter')
     parser.add_argument('--epsilon', default=0.9, help='Epsilon greedy policy')
-    parser.add_argument('--epsilon_decay', default=0.9, help='Epsilon decay after the number of episodes')
+    parser.add_argument('--epsilon_decay', default=0.99, help='Epsilon decay after the number of episodes')
 
 
     args = parser.parse_args()
@@ -72,14 +73,21 @@ def main():
     env = gym.make(args.env)
 
     #Q, policy = MCE.mc_control_epsilon_greedy(env, num_episodes=500000, epsilon=0.1)
-    Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon),  
-        float(args.epsilon_decay), output)
-    plotting.plot_episode_stats(stats)
-    print(Q)
-    # estimator = LQL.Estimator(env)
+    # Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon),  
+    #     float(args.epsilon_decay), output)
+    # plotting.plot_episode_stats(stats)
+    # print(Q)
+    # # estimator = LQL.Estimator(env)
     # stats = LQL.q_learning(env, estimator, int(args.num),  float(args.df),  float(args.epsilon),
     #     float(args.epsilon_decay))
-    # plotting.plot_episode_stats(stats)
+
+    state_size = env.nS
+    action_size = env.nA
+    agent = DQN.DQNAgent(state_size, action_size)
+    stats = DQN.q_learning(env, agent, 50, state_size = state_size, epsilon=0.0)
+    plotting.plot_cost_to_go_mountain_car(env, estimator)
+    plotting.plot_episode_stats(stats, smoothing_window=1)
+
 
 
 if __name__ == '__main__':
