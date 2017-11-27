@@ -12,15 +12,12 @@ from gym import wrappers
 
 # ref: https://keon.io/deep-q-learning/
 class DQNAgent:
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, discount_factor, learning_rate):
         self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=2000)
-        self.gamma = 0.95    # discount rate
-        self.epsilon = 1.0  # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.learning_rate = 0.001
+        self.gamma = discount_factor   # discount rate
+        self.learning_rate = learning_rate#0.001
         self.model = self._build_model()
 
     def _build_model(self):
@@ -38,11 +35,13 @@ class DQNAgent:
         self.memory.append((state, action, reward, next_state, done))
 
 
-    def act(self, state):
-        if np.random.rand() <= self.epsilon:
+    def act(self, state, epsilon):
+        if np.random.rand() <= epsilon:
             return random.randrange(self.action_size)
         act_values = self.model.predict(state)
         return np.argmax(act_values[0])  # returns action
+
+  
 
 
     def replay(self, batch_size):
@@ -55,8 +54,10 @@ class DQNAgent:
             target_f = self.model.predict(state)
             target_f[0][action] = target
             self.model.fit(state, target_f, epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+        
+
+    def get(self):
+        return self.model
 
     def load(self, name):
         self.model.load_weights(name)
@@ -64,8 +65,28 @@ class DQNAgent:
     def save(self, name):
         self.model.save_weights(name)
 
+def make_epsilon_greedy_policy(agent, epsilon, nA):
+    """
+    Creates an epsilon-greedy policy based on a given Q-function approximator and epsilon.
+    
+    Args:
+        epsilon: The probability to select a random action . float between 0 and 1.
+    
+    Returns:
+        A function that takes the observation as an argument and returns
+        the probabilities for each action in the form of a numpy array of length nA.
+    
+    """
+    def policy_fn(observation):
+        A = np.ones(nA, dtype=float) * epsilon / nA
+        q_values = agent.get().predict(observation)
+        best_action = np.argmax(q_values)
+        A[best_action] += (1.0 - epsilon)
+        return A
+    return policy_fn
 
-def q_learning(env, agent, num_episodes, discount_factor=1.0, epsilon=0.1, epsilon_decay=1.0, batch_size=32):
+
+def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsilon_decay ):
     """
     Q-Learning algorithm for fff-policy TD control using Function Approximation.
     Finds the optimal greedy policy while following an epsilon-greedy policy.
@@ -93,23 +114,33 @@ def q_learning(env, agent, num_episodes, discount_factor=1.0, epsilon=0.1, epsil
 
     for i_episode in range(num_episodes):
         state = env.reset()
-        state = np.reshape(state, [1, state_size])
+        state = np.reshape(state, [1, env.nS])
+
+        policy = make_epsilon_greedy_policy(agent, epsilon, env.nA)
        
         for t in itertools.count():
             #env.render()
-            action = agent.act(state)
+            action_probs = policy(state)
+            action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
             next_state, reward, done, _ = env.step(action)
             stats.episode_rewards[i_episode] += reward
             stats.episode_lengths[i_episode] = t
-            next_state = np.reshape(next_state, [1, state_size])
+            next_state = np.reshape(next_state, [1, env.nS])
             agent.remember(state, action, reward, next_state, done)
             state = next_state
             if done:
                 print("episode: {}/{}, score: {}, e: {:.2}"
-                      .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], agent.epsilon))
+                      .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
+                if epsilon > epsilon_min:
+                    epsilon *= epsilon_decay**i_episode
                 break
             if len(agent.memory) > batch_size:
                     agent.replay(batch_size)
+
+        
+                    
+
+    return stats, agent.get()
 
 
 

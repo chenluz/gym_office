@@ -57,10 +57,13 @@ def main():
     parser.add_argument('--env', default='office_control-v1', help='Office env name')
     parser.add_argument('-o', '--output', default='chamber-v1', help='Directory to save data to')
     parser.add_argument('--num', default=100, help='Number of Episodes')
-    parser.add_argument('--df', default=1.0, help='Discount Factor')
+    parser.add_argument('--df', default=0.95, help='Discount Factor')
     parser.add_argument('--alpha', default=0.5, help='Constant step-size parameter')
-    parser.add_argument('--epsilon', default=0.9, help='Epsilon greedy policy')
+    parser.add_argument('--epsilon', default=1.0, help='Epsilon greedy policy')
+    parser.add_argument('--epsilon_min', default=0.1, help='Smallest Epsilon that can get')
     parser.add_argument('--epsilon_decay', default=0.99, help='Epsilon decay after the number of episodes')
+    parser.add_argument('--batch_size', default=32, help='Sampling batch size')
+    parser.add_argument('--lr', default=0.001, help='Learning rate')
 
 
     args = parser.parse_args()
@@ -73,19 +76,25 @@ def main():
     env = gym.make(args.env)
 
     #Q, policy = MCE.mc_control_epsilon_greedy(env, num_episodes=500000, epsilon=0.1)
-    # Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon),  
-    #     float(args.epsilon_decay), output)
-    # plotting.plot_episode_stats(stats)
-    # print(Q)
+    Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon), 
+        float(args.epsilon_min),  float(args.epsilon_decay), output)
+    print(Q)
     # # estimator = LQL.Estimator(env)
     # stats = LQL.q_learning(env, estimator, int(args.num),  float(args.df),  float(args.epsilon),
     #     float(args.epsilon_decay))
 
-    state_size = env.nS
-    action_size = env.nA
-    agent = DQN.DQNAgent(state_size, action_size)
-    stats = DQN.q_learning(env, agent, 50, state_size = state_size, epsilon=0.0)
-    plotting.plot_cost_to_go_mountain_car(env, estimator)
+    # state_size = env.nS
+    # action_size = env.nA
+    # agent = DQN.DQNAgent(state_size, action_size, float(args.df), float(args.lr))
+    # stats, model = DQN.q_learning(env, agent, int(args.num), int(args.batch_size),
+    #     float(args.epsilon), float(args.epsilon_min), float(args.epsilon_decay))
+    # for s in range(7):
+    #     state = s - 3
+    #     state = np.reshape(state, [1, state_size])
+    #     action_value = model.predict(state)
+    #     print(state)
+    #     print(action_value)
+
     plotting.plot_episode_stats(stats, smoothing_window=1)
 
 
