@@ -56,12 +56,12 @@ def main():
     parser = argparse.ArgumentParser(description='Run Reinforcment Learning on Chamber')
     parser.add_argument('--env', default='office_control-v1', help='Office env name')
     parser.add_argument('-o', '--output', default='chamber-v1', help='Directory to save data to')
-    parser.add_argument('--num', default=100, help='Number of Episodes')
+    parser.add_argument('--num', default=500, help='Number of Episodes')
     parser.add_argument('--df', default=0.95, help='Discount Factor')
     parser.add_argument('--alpha', default=0.5, help='Constant step-size parameter')
     parser.add_argument('--epsilon', default=1.0, help='Epsilon greedy policy')
     parser.add_argument('--epsilon_min', default=0.1, help='Smallest Epsilon that can get')
-    parser.add_argument('--epsilon_decay', default=0.99, help='Epsilon decay after the number of episodes')
+    parser.add_argument('--epsilon_decay', default=0.995, help='Epsilon decay after the number of episodes')
     parser.add_argument('--batch_size', default=32, help='Sampling batch size')
     parser.add_argument('--lr', default=0.001, help='Learning rate')
 
@@ -76,24 +76,55 @@ def main():
     env = gym.make(args.env)
 
     #Q, policy = MCE.mc_control_epsilon_greedy(env, num_episodes=500000, epsilon=0.1)
-    Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon), 
-        float(args.epsilon_min),  float(args.epsilon_decay), output)
-    print(Q)
+    # Q, stats = QL.q_learning(env, int(args.num), float(args.df), float(args.alpha), float(args.epsilon), 
+    #     float(args.epsilon_min),  float(args.epsilon_decay), output)
+    # print(Q)
     # # estimator = LQL.Estimator(env)
     # stats = LQL.q_learning(env, estimator, int(args.num),  float(args.df),  float(args.epsilon),
     #     float(args.epsilon_decay))
 
-    # state_size = env.nS
-    # action_size = env.nA
-    # agent = DQN.DQNAgent(state_size, action_size, float(args.df), float(args.lr))
-    # stats, model = DQN.q_learning(env, agent, int(args.num), int(args.batch_size),
-    #     float(args.epsilon), float(args.epsilon_min), float(args.epsilon_decay))
-    # for s in range(7):
-    #     state = s - 3
-    #     state = np.reshape(state, [1, state_size])
-    #     action_value = model.predict(state)
-    #     print(state)
-    #     print(action_value)
+    state_size = env.nS
+    action_size = env.nA
+    agent = DQN.DQNAgent(state_size, action_size, float(args.df), float(args.lr))
+    stats, model = DQN.q_learning(env, agent, int(args.num), int(args.batch_size),
+        float(args.epsilon), float(args.epsilon_min), float(args.epsilon_decay))
+
+    state = [(27.5-27)/6,(27.5-27)/6]
+    state = np.reshape(state, [1, state_size])
+    action_value = model.predict(state)
+    print(state)
+    print(action_value)
+
+    state = [(28.5-27)/6,(28.5-27)/6]
+    state = np.reshape(state, [1, state_size])
+    action_value = model.predict(state)
+    print(state)
+    print(action_value)
+
+    state = [(29.5-27)/6,(29.5-27)/6]
+    state = np.reshape(state, [1, state_size])
+    action_value = model.predict(state)
+    print(state)
+    print(action_value)
+
+    state = [(30.5-27)/6,(30.5-27)/6]
+    state = np.reshape(state, [1, state_size])
+    action_value = model.predict(state)
+    print(state)
+    print(action_value)
+
+    state = [(31.5-27)/6,(31.5-27)/6]
+    state = np.reshape(state, [1, state_size])
+    action_value = model.predict(state)
+    print(state)
+    print(action_value)
+
+    state = [(32.5-27)/6,(32.5-27)/6]
+    state = np.reshape(state, [1, state_size])
+    action_value = model.predict(state)
+    print(state)
+    print(action_value)
+
 
     plotting.plot_episode_stats(stats, smoothing_window=1)
 

@@ -6,6 +6,7 @@ import time
 import itertools
 import pandas as pd
 import os
+from sklearn.preprocessing import MinMaxScaler
 
 
 
@@ -16,6 +17,9 @@ class OfficeSampleEnv(gym.Env):
 	def __init__(self, state_type="physical", csv_file='office_control\envs\csv\environment_sample-skin-skin-human.csv'):
 		self.state_type = state_type
 		self.sample_env = self._load_sample(csv_file)
+		scaler = MinMaxScaler()
+		self.sample_env[['state-skin1', 'state-skin2','next_state-skin1', 'next_state-skin2']] = scaler.fit_transform(
+			self.sample_env[['state-skin1', 'state-skin2','next_state-skin1', 'next_state-skin2']])
 		self.nS = 2
 		self.nA = 3
 		self.cur_state = [0,0]
