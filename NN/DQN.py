@@ -8,6 +8,9 @@ from keras.optimizers import Adam
 import itertools
 from lib import plotting
 from gym import wrappers
+import csv
+import pydot
+from keras.utils import plot_model
 
 
 # ref: https://keon.io/deep-q-learning/
@@ -20,14 +23,21 @@ class DQNAgent:
         self.learning_rate = learning_rate#0.001
         self.model = self._build_model()
 
+
     def _build_model(self):
         # Neural Net for Deep-Q learning Model
+        #ref: https://stats.stackexchange.com/questions/181/how-to-choose-the-number-of-hidden-layers-and-nodes-in-a-feedforward-neural-netw
         model = Sequential()
-        model.add(Dense(24, input_dim=self.state_size, activation='relu'))
-        model.add(Dense(24, activation='relu'))
+        model.add(Dense(self.state_size, input_dim=self.state_size, activation='relu'))
+        model.add(Dense(26, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss='mse',
-                      optimizer=Adam(lr=self.learning_rate))
+        model.compile(loss='mse', optimizer='sgd')
+ 
+        # model.compile(loss='mse',
+        #               optimizer=Adam(lr=self.learning_rate))
+        #(1) mse + adam : saturation, same value for all input, reward increasing
+        #(2) mse + sgd : best 41, reward increasing
+        #(3) categorical_crossentropy + sdg: reward dereasing
         return model
 
 
@@ -42,8 +52,6 @@ class DQNAgent:
         return np.argmax(act_values[0])  # returns action
 
   
-
-
     def replay(self, batch_size):
         minibatch = random.sample(self.memory, batch_size)
         for state, action, reward, next_state, done in minibatch:
@@ -59,11 +67,15 @@ class DQNAgent:
     def get(self):
         return self.model
 
+
     def load(self, name):
         self.model.load_weights(name)
+        return self.model
+
 
     def save(self, name):
         self.model.save_weights(name)
+
 
 def make_epsilon_greedy_policy(agent, epsilon, nA):
     """
@@ -86,7 +98,7 @@ def make_epsilon_greedy_policy(agent, epsilon, nA):
     return policy_fn
 
 
-def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsilon_decay ):
+def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsilon_decay, folder):
     """
     Q-Learning algorithm for fff-policy TD control using Function Approximation.
     Finds the optimal greedy policy while following an epsilon-greedy policy.
@@ -119,10 +131,11 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
         policy = make_epsilon_greedy_policy(agent, epsilon, env.nA)
        
         for t in itertools.count():
-            #env.render()
             action_probs = policy(state)
             action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
             next_state, reward, done, _ = env.step(action)
+           # print(state, action, next_state, reward)
+            write_csv(folder, state[0], action, reward)
             stats.episode_rewards[i_episode] += reward
             stats.episode_lengths[i_episode] = t
             next_state = np.reshape(next_state, [1, env.nS])
@@ -131,17 +144,32 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
             if done:
                 print("episode: {}/{}, score: {}, e: {:.2}"
                       .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
-                if epsilon > epsilon_min:
-                    epsilon *= epsilon_decay**i_episode
+                if(i_episode%2 == 0):
+                    if epsilon > epsilon_min:
+                        epsilon *= epsilon_decay
                 break
             if len(agent.memory) > batch_size:
-                    agent.replay(batch_size)
-
-        
-                    
+                    agent.replay(batch_size)    
+    agent.save("office_simulator-dqn.h5")           
 
     return stats, agent.get()
 
 
+def write_csv(folder, state, action, reward):
+    with open(folder + ".csv", 'a', newline='') as csvfile:
+        fieldnames = ['air temperature', 'radiant temperature', 'air velocity', 'relative humidity', 
+        'skin temperature', 'thermal sensation', 'action', 'reward']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writerow({fieldnames[0]: state[0], fieldnames[1]: state[1], fieldnames[2]:state[2],
+                fieldnames[3]:state[3], fieldnames[4]:state[4], fieldnames[5]:state[5],
+                fieldnames[6]:action, fieldnames[7]:reward})
 
 
+def test_model(env, agent):
+    model = agent.load("office_simulator-dqn.h5")
+    ob, state = env.get_state(25, 25, 8, 50)   
+    state = np.reshape(state, [1, env.nS])
+    print(ob)
+    target_f = model.predict(state)
+    print(target_f)
+    print(np.argmax(target_f))
