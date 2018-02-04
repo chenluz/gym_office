@@ -3,4 +3,5 @@ matplotlib
 pandas
 scipy
 scikit-learn
+influxdb
 -e .
