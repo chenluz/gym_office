@@ -28,6 +28,11 @@ def getData_env():
     return ""
 
 def writeToCSV_Environment():
+    """
+    write data getting from environmental sensor to CSV file
+    The format for data is
+    {username: xxx, datastreams:{time:xxx, temperature:xxx, humidity:xxx}}
+    """
     data = request.data
     json_data = json.loads(data)
     username = json_data["username"]
@@ -42,6 +47,11 @@ def writeToCSV_Environment():
 
 
 def writeToDB_Environment():
+    """
+    write data getting from environmental sensor to influxdb database
+    The format for data is
+    {username: xxx, datastreams:{time:xxx, temperature:xxx, humidity:xxx}}
+    """
     data = request.data
     json_data = json.loads(data)
     username = json_data["username"]
@@ -77,6 +87,10 @@ def getData_Occupant():
     return ""
 
 def writeToCSV_Occupant():
+    """
+    write data getting from Microsoft band to CSV file 
+    
+    """
     now = datetime.datetime.now()
     for keyword in data_keyword:
         for option in request.json:
@@ -125,6 +139,10 @@ def writeToCSV_Occupant():
 #show databases
 #drop database mydb
 def writeToDB_Occupant():
+    """
+    write data getting from Microsoft band to influxdb database
+
+    """
     for key_word in data_keyword:
         for option in request.json:
             item =  option["value"]
