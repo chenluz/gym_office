@@ -16,7 +16,18 @@ Type 4 is the one that is in used.  This environment is explained below in detai
 
 6 desk
 
-Observation from envionrmental sensor and Microsoft band
+Observation is from influxdb, which data from envionrmental sensor and Microsoft band is saved in
+
+The database structure is below:
+        Measurement(Table)       field_key1       field_key2   
+        skin_temperature         value
+        heart_rate               value
+        thermal_satisfaction     value
+        thermal_sensation        value
+        environment              temperature      humidity 
+
+
+        Data: Timestamp field_value
 
 Action is turn on/off six fan heater through Plugwise
 
