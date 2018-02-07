@@ -12,6 +12,7 @@ import copy
 import datetime
 import ast
 from influxdb import InfluxDBClient
+import calendar
 
 data_keyword = ["hrate", "temp", "gsr", "rr", "activity"]
 
@@ -55,9 +56,7 @@ def writeToDB_Environment():
     data = request.data
     json_data = json.loads(data)
     username = json_data["username"]
-    now = datetime.datetime.now()
-    ts = time.time()
-    st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+    utcnow = datetime.datetime.utcnow()
     data =  json_data["datastreams"]
                 
     json_body = [
@@ -66,7 +65,7 @@ def writeToDB_Environment():
              "tags": {
                 "name": username,
             },
-            "time": st,
+            "time": utcnow,
             "fields": {
                 "temperature": data['temperature'],
                 "humidity": data['humidity']
@@ -74,7 +73,6 @@ def writeToDB_Environment():
         }
     ]
 
-    client = InfluxDBClient(host='localhost', port=8086, username='chenlu', password='research', database='CMUMM409office')
     client.write_points(json_body)
 
 
@@ -126,7 +124,6 @@ def writeToCSV_Occupant():
                         voting = 2
                     else:
                         voting = 3 
-
                     votingwriter.writerow({'time': datetime.datetime.fromtimestamp(int(item["date"])).strftime('%Y-%m-%d %H:%M:%S'), 'voting':voting})
 
     return ""
@@ -148,12 +145,7 @@ def writeToDB_Occupant():
             item =  option["value"]
             username = option["name"]
             if item["type"] == key_word:
-                local_tz = pytz.timezone('US/Eastern')
-                time = datetime.datetime.fromtimestamp(int(item["date"])).strftime('%Y-%m-%d %H:%M:%S')
-                datetime_without_tz = datetime.datetime.strptime(time,'%Y-%m-%d %H:%M:%S')
-                datetime_with_tz = local_tz.localize(datetime_without_tz, is_dst=None) # No daylight saving time
-                datetime_in_utc = datetime_with_tz.astimezone(pytz.utc)
-                timeStamp = datetime_in_utc.strftime('%Y-%m-%d %H:%M:%S')
+                utcnow = datetime.datetime.utcnow()
                 value = item[key_word]
                 # for concept of database, ref:https://docs.influxdata.com/influxdb/v0.9/concepts/key_concepts/
                 json_body = [
@@ -162,14 +154,13 @@ def writeToDB_Occupant():
                          "tags": {
                             "name": username,
                         },
-                        "time": time,
+                        "time": utcnow,
                         "fields": {
                             "value": value
                         }
                     }
                 ]
-
-                client = InfluxDBClient(host='localhost', port=8086, username='chenlu', password='research', database='CMUMM409office')
+   
                 client.write_points(json_body)
 
 
@@ -177,12 +168,7 @@ def writeToDB_Occupant():
             item =  option["value"]
             username = option["name"]   
             if item["type"] == "notification":
-                local_tz = pytz.timezone('US/Eastern')
-                time = datetime.datetime.fromtimestamp(int(item["date"])).strftime('%Y-%m-%d %H:%M:%S')
-                datetime_without_tz = datetime.datetime.strptime(time,'%Y-%m-%d %H:%M:%S')
-                datetime_with_tz = local_tz.localize(datetime_without_tz, is_dst=None) # No daylight saving time
-                datetime_in_utc = datetime_with_tz.astimezone(pytz.utc)
-                timeStamp = datetime_in_utc.strftime('%Y-%m-%d %H:%M:%S')
+                utcnow = datetime.datetime.utcnow()
                 if "button" in item["notification"]:
                     voting = int(item["notification"][-1]) 
                     if voting == 2: # codest
@@ -202,24 +188,58 @@ def writeToDB_Occupant():
                     value = voting
                     json_body = [
                         {
-                            "measurement": "thermal_sensation",
+                            "measurement": "thermal_satisfaction",
                              "tags": {
                                 "name": username,
                             },
-                            "time": time,
+                            "time": utcnow,
                             "fields": {
                                 "value": value
                             }
                         }
                     ]
-
-                    client = InfluxDBClient(host='localhost', port=8086, username='chenlu', password='research', database='CMUMM409office')
+                    
                     client.write_points(json_body)
                     #result = client.query('select value from thermal_sensation;')
                     #print("Result: {0}".format(result))  
 
     return ""
 
+def test():
+    username = 'Chenlu'
+    utcnow = datetime.datetime.utcnow()
+
+    data =  {'temperature': 22, 'humidity': 38}
+                
+    json_body = [
+        {
+            "measurement": "environment",
+             "tags": {
+                "name": username,
+            },
+            "time": utcnow,
+            "fields": {
+                "temperature": data['temperature'],
+                "humidity": data['humidity']
+            }
+        }
+    ]
+
+    client.write_points(json_body)
+    json_body = [
+            {
+                "measurement": "heart_rate",
+                 "tags": {
+                    "name": 'Chenlu',
+                },
+                "time": utcnow,
+                "fields": {
+                    "value": 70
+                }
+            }
+        ]
+    client.write_points(json_body)
+ 
 
 @app.route("/token", methods=['POST'])
 def get_token(): 
@@ -228,5 +248,7 @@ def get_token():
     return "" 
 
 if __name__ == "__main__":
+    client = InfluxDBClient(host='localhost', port=8086, username='chenlu', password='research', database='CMUMM409office')
+    #test()
     app.run(host='0.0.0.0')
 
