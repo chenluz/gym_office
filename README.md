@@ -22,10 +22,10 @@ The database structure is below:
 
 		Measurement(Table) 				field_key1 		field_key2   
 		skin_temperature  				value
-		heart_rate 						value
+		heart_rate 					value
 		thermal_satisfaction				value
 		thermal_sensation				value
-		environment 					temperature 	humidity 
+		environment 					temperature 		humidity 
 
 
         Data: Timestamp field_value
