@@ -8,7 +8,6 @@ from keras.optimizers import Adam
 import itertools
 from lib import plotting
 from gym import wrappers
-import csv
 import pydot
 from keras.utils import plot_model
 
@@ -29,7 +28,7 @@ class DQNAgent:
         #ref: https://stats.stackexchange.com/questions/181/how-to-choose-the-number-of-hidden-layers-and-nodes-in-a-feedforward-neural-netw
         model = Sequential()
         model.add(Dense(self.state_size, input_dim=self.state_size, activation='relu'))
-        model.add(Dense(26, activation='relu'))
+        model.add(Dense(24, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss='mse', optimizer='sgd')
  
@@ -134,35 +133,26 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
             action_probs = policy(state)
             action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
             next_state, reward, done, _ = env.step(action)
-           # print(state, action, next_state, reward)
-            write_csv(folder, state[0], action, reward)
-            stats.episode_rewards[i_episode] += reward
-            stats.episode_lengths[i_episode] = t
+            env.my_render()
+            #stats.episode_rewards[i_episode] += reward
+            #stats.episode_lengths[i_episode] = t
             next_state = np.reshape(next_state, [1, env.nS])
             agent.remember(state, action, reward, next_state, done)
             state = next_state
-            if done:
-                print("episode: {}/{}, score: {}, e: {:.2}"
+            print("episode: {}/{}, score: {}, e: {:.2}"
                       .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
-                if(i_episode%2 == 0):
-                    if epsilon > epsilon_min:
-                        epsilon *= epsilon_decay
+            if done:
+                
+                # if(i_episode%2 == 0):
+                #     if epsilon > epsilon_min:
+                #         epsilon *= epsilon_decay
                 break
             if len(agent.memory) > batch_size:
                     agent.replay(batch_size)    
-    agent.save("office_simulator-dqn.h5")           
+    agent.save("office_mmch409-dqn.h5")           
 
     return stats, agent.get()
 
-
-def write_csv(folder, state, action, reward):
-    with open(folder + ".csv", 'a', newline='') as csvfile:
-        fieldnames = ['air temperature', 'radiant temperature', 'air velocity', 'relative humidity', 
-        'skin temperature', 'thermal sensation', 'action', 'reward']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writerow({fieldnames[0]: state[0], fieldnames[1]: state[1], fieldnames[2]:state[2],
-                fieldnames[3]:state[3], fieldnames[4]:state[4], fieldnames[5]:state[5],
-                fieldnames[6]:action, fieldnames[7]:reward})
 
 
 def test_model(env, agent):
