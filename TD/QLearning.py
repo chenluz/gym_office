@@ -11,11 +11,6 @@ from lib import plotting
 import time
 import csv
 
-if "../" not in sys.path:
-  sys.path.append("../") 
-
-matplotlib.style.use('ggplot')
-
 ##ref: https://github.com/dennybritz/reinforcement-learning
 def make_epsilon_greedy_policy(Q, nA):
     """
@@ -43,7 +38,6 @@ def make_epsilon_greedy_policy(Q, nA):
         A[best_action] += (1.0 - epsilon)
         return A
     return policy_fn
-
 
 def q_learning(env, num_episodes, discount_factor, alpha, epsilon, epsilon_min,
  epsilon_decay, folder):
@@ -83,6 +77,8 @@ def q_learning(env, num_episodes, discount_factor, alpha, epsilon, epsilon_min,
             print("\rEpisode {}/{}.".format(i_episode + 1, num_episodes))
             sys.stdout.flush()
 
+        epsilon = epsilon * epsilon_decay**i_episode
+
         # Reset the environment and pick the first action episode
         state = env.reset()
 
@@ -117,8 +113,7 @@ def q_learning(env, num_episodes, discount_factor, alpha, epsilon, epsilon_min,
                 break
                 
             state = next_state
-       
-        #write_Q(folder, Q)
+
     
     return Q, stats
 

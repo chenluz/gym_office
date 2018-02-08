@@ -10,6 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 
+
 # ref: https://github.com/openai/gym/tree/master/gym/envs
 
 class OfficeSampleEnv(gym.Env):
@@ -89,7 +90,6 @@ class OfficeSampleEnv(gym.Env):
 				print (DEVICE_NAME[DEVICE[i]], ACTION[0])
 
 					
-
 	def _get_physical_state(self,action):
 		""" Get next state based on current state and action """
 		possible_next_state = self.sample_env[((self.sample_env["state-skin1"] ==  self.cur_state[0] ) 

@@ -1,5 +1,6 @@
 # office_control
 
+
 There are four different types of environment in the fold:
 
 Type 1: sample environment, in which environment is just sample data
@@ -32,11 +33,10 @@ The database structure is below:
 
 Action is turn on/off six fan heater through Plugwise
 
+
 #### Example
 
 ```python
 import gym;
 import office_control.envs as office_env;
-
 env = gym.make('office_control-v0');
-
