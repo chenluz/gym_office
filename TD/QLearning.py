@@ -11,8 +11,6 @@ from lib import plotting
 import time
 import csv
 
-matplotlib.style.use('ggplot')
-
 ##ref: https://github.com/dennybritz/reinforcement-learning
 def make_epsilon_greedy_policy(Q, nA):
     """
@@ -41,8 +39,7 @@ def make_epsilon_greedy_policy(Q, nA):
         return A
     return policy_fn
 
-
-def q_learning(env, num_episodes, discount_factor, alpha, epsilon,
+def q_learning(env, num_episodes, discount_factor, alpha, epsilon, epsilon_min,
  epsilon_decay, folder):
     """
     Q-Learning algorithm: Off-policy TD control. Finds the optimal greedy policy
@@ -81,6 +78,7 @@ def q_learning(env, num_episodes, discount_factor, alpha, epsilon,
             sys.stdout.flush()
 
         epsilon = epsilon * epsilon_decay**i_episode
+
         # Reset the environment and pick the first action episode
         state = env.reset()
 
@@ -106,12 +104,16 @@ def q_learning(env, num_episodes, discount_factor, alpha, epsilon,
             td_target = reward + discount_factor * Q[next_state][best_next_action]
             td_delta = td_target - Q[state][action]
             Q[state][action] += alpha * td_delta
-            if done:  
+
+            if done: 
+                print("episode: {}/{}, score: {}, e: {:.2}"
+                      .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
+                if epsilon > epsilon_min:
+                    epsilon *= epsilon_decay**i_episode 
                 break
                 
             state = next_state
-        print("length of episode:" + str(t))
-        #write_Q(folder, Q)
+
     
     return Q, stats
 

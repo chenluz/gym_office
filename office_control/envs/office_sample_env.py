@@ -6,6 +6,8 @@ import time
 import itertools
 import pandas as pd
 import os
+from sklearn.preprocessing import MinMaxScaler
+
 
 
 
@@ -13,13 +15,16 @@ import os
 
 class OfficeSampleEnv(gym.Env):
 
-	def __init__(self, state_type="subjective", csv_file='office_control\envs\csv\environment_sample-positive.csv'):
+	def __init__(self, state_type="physical", csv_file='office_control\envs\csv\environment_sample-skin-skin-human.csv'):
 		self.state_type = state_type
 		self.sample_env = self._load_sample(csv_file)
-		self.nR = len(set(self.sample_env["state"]))
-		self.nA = len(set(self.sample_env["action"]))
-		self.cur_state = 0
-		self.next_state = 0 
+		scaler = MinMaxScaler()
+		self.sample_env[['state-skin1', 'state-skin2','next_state-skin1', 'next_state-skin2']] = scaler.fit_transform(
+			self.sample_env[['state-skin1', 'state-skin2','next_state-skin1', 'next_state-skin2']])
+		self.nS = 2
+		self.nA = 3
+		self.cur_state = [0,0]
+		self.next_state = [0,0] 
 		self.is_terminal = False
 		self.step_count = 0
 	
@@ -36,11 +41,11 @@ class OfficeSampleEnv(gym.Env):
 		if self.state_type == "subjective":
 			ob = self._get_subjective_state(action)
 		elif self.state_type == "physical":
-			ob = self._get_physical_state()
+			ob = self._get_physical_state(action)
 		reward = self._get_reward(action)
 		self.cur_state = self.next_state
 		self.step_count += 1
-		if self.step_count > 500:
+		if self.step_count > 250:
 			self.is_terminal = True
 			self.step_count = 0
 		return ob, reward, self.is_terminal, {}
@@ -85,13 +90,13 @@ class OfficeSampleEnv(gym.Env):
 				print (DEVICE_NAME[DEVICE[i]], ACTION[0])
 
 					
-
-	def _get_physical_state(self):
-		""" state is occupant's skin temperature and heart rate. """
-		hrate = self.piserver.get_command(OBSERVATION['hrate'])[0]
-		rr = self.piserver.get_command(OBSERVATION['rr'])[0]
-		skin_temp = self.piserver.get_command(OBSERVATION['temp'])[0]	
-		return  np.array([skin_temp, hrate, rr])
+	def _get_physical_state(self,action):
+		""" Get next state based on current state and action """
+		possible_next_state = self.sample_env[((self.sample_env["state-skin1"] ==  self.cur_state[0] ) 
+			& (self.sample_env["state-skin2"] == self.cur_state[1])
+			& (self.sample_env['action'] == action))]
+		self.next_state = possible_next_state.loc[possible_next_state.index[0],['next_state-skin1', 'next_state-skin2']].tolist()
+		return self.next_state
 
 
 	def _get_subjective_state(self, action):
@@ -99,10 +104,6 @@ class OfficeSampleEnv(gym.Env):
 		possible_next_state = self.sample_env[((self.sample_env['state'] ==  self.cur_state ) 
 			& (self.sample_env['action'] == action))]
 		length = len(possible_next_state.index)
-		if(length == 0): # there is no such sample in the environment
-			self.next_state =  self.cur_state
-			self.is_terminal = True
-			return  self.next_state
 		index = np.random.choice(length)
 		self.next_state = possible_next_state['next state'].tolist()[index]
 		return self.next_state
@@ -110,23 +111,22 @@ class OfficeSampleEnv(gym.Env):
 
 	def _get_reward(self, action):
 		""" Get reward based on current state, action, and next state  """
-		possible_reward= self.sample_env[((self.sample_env['state'] ==  self.cur_state ) 
-			& (self.sample_env['action'] == action) & (self.sample_env['next state'] == self.next_state))]
-		length = len(possible_reward.index) 
-		if(length == 0): # there is no such sample in the environment
-			self.is_terminal = True
-			return  -10 # a big negative number
-
-		index = np.random.choice(length)
-		reward = possible_reward['reward'].tolist()[index]
+		possible_reward= self.sample_env[((self.sample_env["state-skin1"] ==  self.cur_state[0] ) 
+			& (self.sample_env["state-skin2"] == self.cur_state[1]) 
+			& (self.sample_env['action'] == action)
+			& (self.sample_env['next_state-skin1'] == self.next_state[0])
+			& (self.sample_env['next_state-skin2'] == self.next_state[1]))]
+		row_reward = possible_reward[['reward1','reward2']]
+		reward = (row_reward['reward1'] + row_reward['reward2'])/2
 		return reward
 
 
 	def _reset(self):
 		if self.state_type == "subjective":
-			ob = 0
+			ob = np.random.choice(self.sample_env["state"])
 		elif self.state_type == "physical":
-			ob = self._get_physical_state()
+			ob_index = np.random.choice(self.sample_env.index)
+		ob = self.sample_env.loc[ob_index,["state-skin1", "state-skin2"]].tolist()
 		self.cur_state = ob
 		self.is_terminal = False
 		return ob
