@@ -16,9 +16,6 @@ import csv
 class OfficeEnv(gym.Env):
 
 	def __init__(self, state_type="physical", step_in_episode = 60, response_time = 300):
-		self.plugwise = plugWise("128.2.108.76", 8080)
-		self.db = InfluxDB(host='localhost', port=8086, username='chenlu',
-            password='research', database='CMUMM409office')
 		self.nA = len(Action_Dict)
 		self.nS = 6
 		self.step_counter = 20
