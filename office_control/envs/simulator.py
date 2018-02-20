@@ -6,8 +6,28 @@ import base64
 import pytz, datetime
 import time
 import math
+import pickle
+from sklearn.kernel_ridge import KernelRidge
 
 ## ref: https://github.com/CenterForTheBuiltEnvironment/comfort_tool/blob/master/contrib/comfort_models.py
+
+class airEnviroment():
+    """
+    Cacluate air temperature based on action take from kernerl_regression_model
+
+    """
+    def __init__(self):  
+        pass
+
+    def get_air_temp(self,action, pre_air_temp):
+        loaded_model = pickle.load(open("kernel_regression_model.sav", 'rb'))
+        result = loaded_model.predict([[action, pre_air_temp]])
+        return result
+
+    def get_air_humidity(self,action, pre_air_humid):
+        loaded_model = pickle.load(open("kernel_regression_model_humidity.sav", 'rb'))
+        result = loaded_model.predict([[action, pre_air_humid]])
+        return result
 
 class airVelocity():
     """

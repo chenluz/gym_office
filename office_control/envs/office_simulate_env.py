@@ -7,17 +7,17 @@ import itertools
 import pandas as pd
 import os
 from .simulator import airVelocity
+from .simulator import airEnviroment
 from .simulator import skinTemperature
 from .simulator import feedback
 from sklearn.preprocessing import MinMaxScaler
+
 
 
 Clo_initial = 1.2
 Rh_initial = 20
 Ta_out_initial = -1
 Rh_out_initial = 60
-Action_Dict = {0: [0, 0, 0], 1: [0, 0, 1], 2: [0, 1, 0], 3:[0, 1, 1], 
-				4: [1, 0, 0], 5: [1, 0, 1], 6: [1, 1, 0], 7: [1, 1, 1]}
 
 
 # ref: https://github.com/openai/gym/tree/master/gym/envs
@@ -25,13 +25,13 @@ Action_Dict = {0: [0, 0, 0], 1: [0, 0, 1], 2: [0, 1, 0], 3:[0, 1, 1],
 class OfficeSimulateEnv(gym.Env):
 
 	def __init__(self):
-		self.nS = 6
-		self.nA = 8
+		self.nS = 1
+		self.nA = 7
 		self.is_terminal = False
 		self.step_count = 0
 		self.cur_Ta = 0
+		self.cur_Rh = 0
 	
-
 
 	def get_state(self, Ta, Tr, Rh):
 		Tskin_obj = skinTemperature()
@@ -64,65 +64,93 @@ class OfficeSimulateEnv(gym.Env):
 		# Vel = action_obj.get_air_velocity(action)
 
 		# get air temperature after action
+		air = airEnviroment()
+		Ta  = air.get_air_temp(action, self.cur_Ta)[0]
+		Rh = air.get_air_humidity(action, self.cur_Rh)[0]
 
-		# if first heater on, increase 2
-		if Action_Dict[action][0] == 1:
-			Ta = self.cur_Ta + 0.5
-		else:
-			T_increase = sum(Action_Dict[action])*0.25
-			Ta = self.cur_Ta + T_increase
+		# # if first heater on, increase 2
+		# if Action_Dict[action][0] == 1:
+		# 	Ta = self.cur_Ta + 0.5
+		# else:
+		# 	T_increase = sum(Action_Dict[action])*0.25
+		# 	Ta = self.cur_Ta + T_increase
 
 		self.cur_Ta = Ta
+		self.cur_Rh = Rh
 
 		#get other envrionmental parameter:
 		# air temperature, mean radiant temperature, humidity, cloth 
 		Tr = Ta - 2
-		Rh = Rh_initial
 		Clo = Clo_initial 
-		# get skin temperature based on envrionmental parameter and individual parameter 
-		Tskin_obj = skinTemperature()
-		Tskin = Tskin_obj.comfPierceSET(Ta, Tr, Rh, Clo)
+		# # get skin temperature based on envrionmental parameter and individual parameter 
+		# Tskin_obj = skinTemperature()
+		# Tskin = Tskin_obj.comfPierceSET(Ta, Tr, Rh, Clo)
 		# get PMV and PPD based on environmental parameter
+   		
+   		# -0.5-0.5 Neutural, 0.5-1.5: slight Warm, # 1.5-2.5: Warm, #2.5: Hot
 		feedback_obj = feedback()
 		[pmv, ppd] = feedback_obj.comfPMV(Ta, Tr, Rh, Clo)
+		state = self.process_pmv(pmv)
 	
-		ob = self.process_state([Ta, Rh,Tskin, pmv, Ta_out_initial,Rh_out_initial])
+		#ob = self.process_state([Ta, Rh,Tskin, pmv, Ta_out_initial,Rh_out_initial])
 		
 		reward = -ppd/100
 
 		self.step_count += 1
-		if self.step_count > 100:
+		if self.step_count > 55:
 			self.is_terminal = True
 			self.step_count = 0
-		return ob, reward, self.is_terminal, {}
-
+		#return ob, reward, self.is_terminal, {}
+		return state, reward, self.is_terminal, {}
 
 
 	def _reset(self):
 		self.is_terminal = False
-		# get initial velocity randomly
-		Ta_initial = np.random.uniform(18,30)
-		self.cur_Ta = Ta_initial
-		Tr_initial = Ta_initial - 2
-		Rh_initial = np.random.choice(np.arange(20,80))
-
-		action = np.random.choice(self.nA)
-		#action_obj = airVelocity()
-		#Vel_initial = action_obj.get_air_velocity(action)
-		Tskin_obj = skinTemperature()
-		Tskin_initial = Tskin_obj.comfPierceSET(Ta_initial, Tr_initial, 
-			Rh_initial, Clo_initial)
-		# get PMV and PPD based on environmental parameter
+		self.cur_Ta = 21
+		self.cur_Rh = 25
+		Tr = self.cur_Ta - 2
+		Clo = Clo_initial 
 		feedback_obj = feedback()
-		[pmv_initial, ppd_initial] = feedback_obj.comfPMV(Ta_initial, Tr_initial, 
-			Rh_initial, Clo_initial)
-		pmv_initial= pmv_initial
+		[pmv, ppd] = feedback_obj.comfPMV(self.cur_Ta, Tr, self.cur_Rh, Clo)
+		state = self.process_pmv(pmv)
+		# # get initial velocity randomly
+		# Ta_initial = np.random.uniform(18,30)
+		# self.cur_Ta = Ta_initial
+		# Tr_initial = Ta_initial - 2
+		# Rh_initial = np.random.choice(np.arange(20,80))
 
-		ob = self.process_state([Ta_initial,Rh_initial, Tskin_initial,
-		 pmv_initial, Ta_out_initial,Rh_out_initial])
+		# action = np.random.choice(self.nA)
+		# #action_obj = airVelocity()
+		# #Vel_initial = action_obj.get_air_velocity(action)
+		# Tskin_obj = skinTemperature()
+		# Tskin_initial = Tskin_obj.comfPierceSET(Ta_initial, Tr_initial, 
+		# 	Rh_initial, Clo_initial)
+		# # get PMV and PPD based on environmental parameter
+		# feedback_obj = feedback()
+		# [pmv_initial, ppd_initial] = feedback_obj.comfPMV(Ta_initial, Tr_initial, 
+		# 	Rh_initial, Clo_initial)
+		# pmv_initial= pmv_initial
 
-		return ob
+		# ob = self.process_state([Ta_initial,Rh_initial, Tskin_initial,
+		#  pmv_initial, Ta_out_initial,Rh_out_initial])
+		return state
 
+	def process_pmv(self, pmv):
+		if (-0.5 < pmv < 0.5):
+			state = 0 # neutural 
+		elif ( 0.5 < pmv < 1.5):
+			state = 1 # slightly warm 
+		elif (1.5 < pmv < 2.5):
+			state = 2 # warm
+		elif (2.5 < pmv):
+			state = 3 # hot 
+		elif ( -1.5 < pmv < -0.5):
+			state = -1 # slight cool
+		elif ( -2.5 < pmv < -1.5):
+			state = -2 # cool
+		elif ( pmv < -2.5):
+			state = -3 # cold
+		return state
 
 	def process_state(self, state):
 		# process state 

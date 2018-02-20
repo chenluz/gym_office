@@ -59,7 +59,7 @@ class InfluxDB():
     ############### begin of help function #################
     def get_topValue_db(self, column, table):
         _query = 'select top('+ column +', 1) from ' + table + ';'
-        print(_query)
+        #print(_query)
         data_db = self.client.query(_query)
         top_value = list(data_db.get_points())[0]["top"]
         return top_value
@@ -70,7 +70,7 @@ class InfluxDB():
         ##(2) and the mean value for 1:18 is the averaged from [1:18, 1:21)
         ##So here we don't use mean in influxdb
         _query = 'select '+ column +' from ' + table +' where time > now() - '+ past_time + ';'
-        print(_query)
+        #print(_query)
         data_db = self.client.query(_query)
         value_list = []
         for value in list(data_db.get_points()):
@@ -80,7 +80,7 @@ class InfluxDB():
 
     def get_derivative_db(self, column, table, interval):
         _query = 'select derivative(mean('+ column +')) from '+ table +' where time > now() - '+ interval + ' group by time('+ interval +') ;'
-        print(_query)
+        #print(_query)
         data_db = self.client.query(_query)
         value_re = 0
         if len(list((data_db.get_points()))) == 0:
@@ -93,7 +93,7 @@ class InfluxDB():
     def get_vote_db(self, column, table, past_time):
         ## if there is no voting in past time, set voting as 0 
         _query = 'select '+ column +' from '+ table +' where time > now() - '+ past_time + ';'
-        print(_query)
+        #print(_query)
         data_db = self.client.query(_query)
         value_list = []
         value_re = 0
@@ -124,13 +124,15 @@ class InfluxDB():
         air_humi_mean, heart_rate_mean, thermal_sat}
 
         The structure of different table in the influx database:
-        Table                    Column1     Column2
+        Measurement(Table)       field_key1       field_key2   
         skin_temperature         value
         heart_rate               value
         thermal_satisfaction     value
         thermal_sensation        value
-        environment              temperature  humidity 
+        environment              temperature      humidity 
 
+
+        Data: Timestamp field_value
 
         """
 
@@ -156,10 +158,27 @@ class InfluxDB():
         obs_dict[derivative['skin_temperature']] = self.get_derivative_db('value', 'skin_temperature', interval)
 
         #3. Get lastest voting in last past_time minutes
-        obs_dict["thermal_satisfaction"] = self.get_vote_db('value', 'thermal_satisfaction', past_time)
+        #obs_dict["thermal_satisfaction"] = self.get_vote_db('value', 'thermal_satisfaction', past_time)
         obs_dict["thermal_sensation"] = self.get_vote_db('value', 'thermal_sensation', past_time)
 
         return obs_dict
+
+        def save_action_db(self, action):
+            json_body = [
+                {
+                    "measurement": "action",
+                     "tags": {
+                        "name": heater,
+                    },
+                    "time": utcnow,
+                    "fields": {
+                        "value": action,
+                    }
+                }
+            ]
+
+            self.client.write_points(json_body)
+
 
 
 occupant = {"skin_temperature": 'skin_temp_mean'}

@@ -9,13 +9,14 @@ import requests
 import time
 import itertools
 import csv
+import datetime
 
 
 # ref: https://github.com/openai/gym/tree/master/gym/envs
 
 class OfficeEnv(gym.Env):
 
-	def __init__(self, state_type="physical", step_in_episode = 60, response_time = 300):
+	def __init__(self, response_time = 600):
 		self.plugwise = plugWise("128.2.108.76", 8080)
 		self.db = InfluxDB(host='localhost', port=8086, username='chenlu',
             password='research', database='CMUMM409office')
@@ -43,10 +44,11 @@ class OfficeEnv(gym.Env):
 		state,reward = self._process_observation(self.observation)
 		self.reward = reward
 		self.step_counter = self.step_counter - 1
-		if self.step_counter < 1:
-			is_terminal = True
-		else:
-			is_terminal = False
+		# if self.step_counter < 1:
+		# 	is_terminal = True
+		# else:
+		# 	is_terminal = False
+		is_terminal = False
 		return state, reward, is_terminal, {}
 
 
@@ -63,6 +65,7 @@ class OfficeEnv(gym.Env):
 		"""
 		a = 0
 		print("action:" + str(action)) 
+		self.db.save_action_db(action)
 		[heater_1, heater_2, heater_3] = Action_Dict[action] 
 		print (DEVICE_NAME[DEVICE[0]], ACTION_Local[heater_1])
 		self.plugwise.send_command(DEVICE[0], ACTION_Local[heater_1]) 
@@ -113,15 +116,19 @@ class OfficeEnv(gym.Env):
 
 	def my_render(self, model='human', close=False):
 	    with open("render.csv", 'a', newline='') as csvfile:
-	        fieldnames = ['skin_temp_mean', 'skin_temp_deriv', 'air_temp_mean',
+	        fieldnames = ['time', 'action', 'skin_temp_mean', 'skin_temp_deriv', 'air_temp_mean',
 	                    'air_temp_deriv', 'air_humi_mean', 
-	                    'thermal_sensation', 'action', 'reward']
+	                    'thermal_sensation', 'reward']
 	        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-	        writer.writerow({fieldnames[0]: self.observation[fieldnames[0]], fieldnames[1]: 
-	        	self.observation[fieldnames[1]], fieldnames[2]:self.observation[fieldnames[2]],
-	                fieldnames[3]:self.observation[fieldnames[3]], fieldnames[4]:self.observation[fieldnames[4]], 
-	                fieldnames[5]:self.observation[fieldnames[5]],
-	                fieldnames[6]:self.action, fieldnames[7]:self.reward})
+	        writer.writerow({fieldnames[0]: datetime.datetime.utcnow(), 
+	        	fieldnames[1]:self.action, 
+				fieldnames[2]:self.observation[fieldnames[2]], 
+				fieldnames[3]:self.observation[fieldnames[3]], 
+				fieldnames[4]:self.observation[fieldnames[4]], 
+				fieldnames[5]:self.observation[fieldnames[5]],
+				fieldnames[6]:self.observation[fieldnames[6]],
+				fieldnames[7]:self.observation[fieldnames[7]], 
+				fieldnames[8]:self.reward})
 
 
 DEVICE = {

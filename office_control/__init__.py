@@ -9,3 +9,8 @@ register(
     id='office_control-v1',
     entry_point='office_control.envs:OfficeSampleEnv'
 )
+
+register(
+    id='office_control-v2',
+    entry_point='office_control.envs:OfficeSimulateEnv'
+)
