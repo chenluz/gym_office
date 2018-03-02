@@ -357,16 +357,3 @@ class feedback():
 
         return r
 
-
-# Ta = 23
-# Tr = Ta - 2
-# Rh = 50
-# Clo = 1.2
-# Tskin_obj = skinTemperature()
-# Tskin = Tskin_obj.comfPierceSET(Ta, Tr, Rh, Clo)
-# # get PMV and PPD based on environmental parameter
-# feedback_obj = feedback()
-# [pmv, ppd] = feedback_obj.comfPMV(Ta, Tr, Rh, Clo)
-
-# print(Tskin) # 35
-# print(pmv, ppd)

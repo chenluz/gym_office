@@ -2,12 +2,12 @@
 from mpl_toolkits.mplot3d import Axes3D
 from pandas import Series
 import matplotlib.pyplot as plt
+plt.style.use('ggplot')
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 from statsmodels.tsa.ar_model import AR
 from sklearn.metrics import mean_squared_error
 from sklearn.kernel_ridge import KernelRidge
-from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
@@ -17,26 +17,95 @@ from datetime import datetime
 import requests
 from sklearn.metrics import mean_squared_error
 import pickle
+from matplotlib.ticker import MaxNLocator
+import datetime as dt
+from sklearn.preprocessing import MinMaxScaler
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.utils import np_utils
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
 
 
 # ref: http://www.statsmodels.org/dev/examples/notebooks/generated/statespace_sarimax_stata.html
+def plot_relationship(data, pngName, param1, param2):
+    data.plot(figsize=(12,6))
+    plt.savefig(pngName)
+    plt.close()
+    data.plot.bar(figsize=(12,8))
+    plt.savefig(pngName + "_bar")
+    plt.close()
+    data.plot.scatter(x=param1, y=param2, figsize=(12,8))
+    plt.savefig(pngName + "_scatter")
+    plt.close()
+    return 
 
-def plot_observation():
+
+def plot_sat_sen(data, pngName, param1, param2, tag):
+    fig, ax = plt.subplots(figsize=(12,6))
+    two_array  = []
+    labels = []
+    data_dict = {}
+    for item in data[param1].unique():
+        labels.append(item)
+        two_array.append((data.loc[data['Satisfaction'] == item])['Sensation'].tolist())
+    #ax.boxplot(two_array, labels=labels)
+    for i in range(-3, 4):
+        data_dict[i] = (data.loc[data['Satisfaction'] == i])['Sensation'].tolist()
+    size_constant = 20
+    for xe, ye in data_dict.items():
+        xAxis = [xe] * len(ye)
+        #square it to amplify the effect, if you do ye.count(num)*size_constant the effect is barely noticeable
+        sizes = [ye.count(num)**2.5 * size_constant for num in ye]
+       
+        plt.scatter(xAxis, ye, s=sizes)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    #ax.set_xlim(-3, 3)
+    #ax.set_ylim(-3, 3)
+    ax.set_xlabel('Satisfaction')
+    ax.set_ylabel('Sensation')
+    plt.title(tag)
+    plt.savefig(pngName + "_scatter_size")
+
+
+def plot_observation(data, pngName, param1, param2, scatter, tag, limit_low, limit_high):
     # plot obervation
     fig, ax1 = plt.subplots(figsize=(12,6))
-    ax1.plot(data_m.index, data_m['Temperature'], 'g')
+    ax1.set_ylim(19, 31)
+    ax1.plot(data.index, data[param1], 'g')
+    print(data[param2])
     ax1.set_xlabel('Time (m)')
     # Make the y-axis label, ticks and tick labels match the line color.
-    ax1.set_ylabel('Temperature', color='g')
+    ax1.set_ylabel(param1, color='g')
     ax1.tick_params('y', colors='g')
-
-    ax2 = ax1.twinx()
-    ax2.plot(data_m.index, data_m['Action'], 'r')
-    ax2.set_ylabel('Action', color='r')
-    ax2.tick_params('y', colors='r')
-
+    if scatter:
+        ax2 = ax1.twinx()
+        ax2.set_ylim(limit_low, limit_high)
+        ax2.plot(data.index, data[param2], 'r.')
+        ax2.set_ylabel(param2, color='r')
+        ax2.tick_params('y', colors='r')
+    else:
+        ax2 = ax1.twinx()
+        ax2.set_ylim(limit_low, limit_high)
+        ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax2.plot(data.index, data[param2], 'r')
+        ax2.set_ylabel(param2, color='r')
+        ax2.tick_params('y', colors='r')
+    plt.title(tag)
     fig.tight_layout()
-    plt.savefig("obervation.png")
+    plt.savefig(pngName)
+    plt.close()
+    fig, ax = plt.subplots(figsize=(12,6))
+    ax.set_xlim(19, 31)
+    ax.set_xlabel('Air Temperature')
+    ax.set_ylim(limit_low, limit_high)
+    ax.set_ylabel(param2)
+    ax.plot(data[param1], data[param2], "r.") 
+    plt.title(tag)
+    plt.savefig(pngName + "_relation")
     return 
 
 
@@ -226,26 +295,33 @@ def MMDP():
 
 
 
-def KernelRidgeRegression(state, pre_state):
-    inSampleTime = '2018-02-10 18:08:00'
-    print(data_m)
-    train_Y = data_m.ix[:inSampleTime, state].as_matrix()
-    true_Y = data_m.ix[inSampleTime:, state].as_matrix()
-    true_X = data_m.ix[inSampleTime:, ['Action', pre_state]].as_matrix()
+def KernelRidgeRegression(data_m, input_list, output, filename, inSampleTime):
+    """
+    Parameters:
+    data_m :dataframe, the dataframe that saved all the all the X and Y 
+    input: array, a array of column name in the DataFrame that used as input
+    output: str, a column name in the DataFrame that used as output
+    filename: str, specify the model name and png name that will be saved 
+    inSampleTime: str, the time to split input and output
+    """
+ 
+    train_Y = data_m.ix[:inSampleTime, output].as_matrix()
+    true_Y = data_m.ix[inSampleTime:, output].as_matrix()
+    true_X = data_m.ix[inSampleTime:, input_list].as_matrix()
 
     # train_X = np.reshape(data_m.ix[:inSampleTime, 'Pre_Temperature'].as_matrix(), (len(train_Y), 1))
     # test_X = np.reshape(data_m['Pre_Temperature'].as_matrix(), 
     #      (len(data_m['Pre_Temperature'].as_matrix()), 1))
-    train_X = data_m.ix[:inSampleTime, ['Action', pre_state]].as_matrix()
-    test_X = data_m[['Action', pre_state]].as_matrix()
+    train_X = data_m.ix[:inSampleTime, input_list].as_matrix()
+    test_X = data_m[input_list].as_matrix()
 
     # #############################################################################
     # Fit regression model
     clf = KernelRidge(alpha=2.0)
     model = clf.fit(train_X, train_Y)
     # save the model to disk
-    filename = 'kernel_regression_model_humidity.sav'
-    pickle.dump(model, open(filename, 'wb'))
+    modlename = filename +'.sav'
+    pickle.dump(model, open(modlename, 'wb'))
 
     y1 = model.predict(test_X)
     pred_Y = model.predict(true_X)
@@ -255,10 +331,10 @@ def KernelRidgeRegression(state, pre_state):
     #Graph
     fig, ax = plt.subplots(figsize=(12,8))
 
-    ax.set(title="KernelRidge Raw Data (MSE:%f)" % MSE, xlabel='Time', ylabel=state)
+    ax.set(title="KernelRidge Raw Data (MSE:%f)" % MSE, xlabel='Time', ylabel=output)
 
     # Plot data points
-    data_m[state].plot(ax=ax, style='o', label='Observed')
+    data_m[output].plot(ax=ax, style='o', label='Observed')
 
     # Plot predictions
     pd.DataFrame({"KernelRidge": y1.flatten()}, index = data_m.index).plot(ax=ax, style='r')  
@@ -269,17 +345,232 @@ def KernelRidgeRegression(state, pre_state):
 
     legend = ax.legend(loc='lower right')      
                                                         
-    plt.savefig("kernelRidge_humidity.png")
+    plt.savefig(filename + ".png")
 
-def process_data_Skin_Air(skinFile, airFile):
-    data_skin = pd.read_csv('environment.csv')
-    data_air = 
+def KernelRidgeRegression_skin(data_m, input_list, output, filename, tag, is_test):
+    """
+    Parameters:
+    data_m :dataframe, the dataframe that saved all the all the X and Y 
+    input: array, a array of column name in the DataFrame that used as input
+    output: str, a column name in the DataFrame that used as output
+    filename: str, specify the model name and png name that will be saved 
+    is_test: boolean, whether it is training or testing
+    """
+ 
+    true_Y = data_m[output].as_matrix()
+    true_X = data_m[input_list].as_matrix()
 
-def main():
+    # #############################################################################
+    if is_test == False: 
+        # training and saving the modle
+        # Fit regression model
+        clf = KernelRidge(alpha=2.0)
+        model = clf.fit(true_X, true_Y)
+        # save the model to disk
+        modlename = filename +'.sav'
+        pickle.dump(model, open(modlename, 'wb'))
+    else: 
+        # load the trained model 
+        model = pickle.load(open("csv/user3/Skin_Environment_user3-2018-2-19.sav", "rb"))
+
+    pred_Y = model.predict(true_X)
+
+    MSE = mean_squared_error(true_Y, pred_Y)
+
+    #Graph
+    fig, ax = plt.subplots(figsize=(12,8))
+
+    ax.set(title="KernelRidge Raw Data (MSE:%f)" % MSE, xlabel='Time', ylabel=output)
+
+    # Plot data points
+    data_m[output].plot(ax=ax, style='o', label='Observed')
+
+    # Plot predictions
+    pd.DataFrame({"KernelRidge": pred_Y.flatten()}, index = data_m.index).plot(ax=ax, style='r')  
+
+    legend = ax.legend(loc='lower right')      
+                                                        
+    plt.savefig(filename + ".png")
+    plt.close()
+    fig, ax = plt.subplots(figsize=(12,6))
+    ax.set_xlim(19, 31)
+    ax.set_xlabel('Air Temperature(C)')
+    ax.set_ylim(28, 37)
+    ax.set_ylabel('Skin Temperature(C)')
+    ax.plot(true_X, true_Y, "g.", label='Observed')
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.plot(true_X, pred_Y.flatten(), "r.", label='Predicted') 
+    plt.title(tag)
+    legend = ax.legend(loc='lower right')     
+    plt.savefig(filename + "_relation")
+    return
+
+
+def neural_network(data_m, filename, is_test):
+    # ref:https://machinelearningmastery.com/regression-tutorial-keras-deep-learning-library-python/ 
+    true_X = data_m.ix[:, 3:12].as_matrix()
+    true_Y = np.array(data_m["Sensation"].as_matrix()).reshape(len(data_m), 1)
+    scalerX = MinMaxScaler()
+    scalerX.fit(true_X)
+    true_X_scaled = scalerX.transform(true_X)
+    # encode class values as integers
+    encoder = LabelEncoder()
+    encoder.fit(true_Y)
+    encoded_Y = encoder.transform(true_Y)
+    # convert integers to dummy variables (i.e. one hot encoded)
+    dummy_y = np_utils.to_categorical(encoded_Y)
+    print(dummy_y)
+
+    model = Sequential()
+    model.add(Dense(9, input_dim=9, kernel_initializer='normal', activation='relu'))
+    model.add(Dense(5, activation='softmax'))
+    # Compile model
+    model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+    
+    model.fit(true_X_scaled, dummy_y, epochs=200, batch_size=5, verbose=0)
+    classes = model.predict(true_X_scaled, batch_size=5)
+    print(classes)
+
+
+
+def process_data_Sen_Sat(vote_file):
+    data_vote = pd.read_csv(vote_file)
+    data_vote.index = pd.to_datetime(data_vote.Time)
+    data_vote = data_vote.resample('300s').mean()
+    return data_vote.dropna()
+
+
+def process_data_Skin_Air(skin_File, Envir_File):
+    """"
+    Prcoess Air temperature and Relative Humidity 
+    Temperature and Humidity is 10s interval, 
+    Make every Temperature and Humidity within every 30s as 3 different features 
+
+    Merge Skin and Environment Data
+    """
+
+    ####### process skin temperature
+    data_skin = pd.read_csv(skin_File)
+    data_skin.index = pd.to_datetime(data_skin.Time)
+    data_skin = data_skin.resample('30s', closed="right").mean()
+    print(data_skin)
+
+    # ####### process air temperature and relative humidity
+    data_air = pd.read_csv(Envir_File)
+    data_air.index = pd.to_datetime(data_air.Time)
+     # empty item filled with the value after it
+    # data_air= data_air.resample('10s').mean().bfill()
+    # ## make all the 0/30,10/40 20/50 second as a column,
+    # data_air["Second"] = data_air.index.second
+    # indices = data_air["Second"] > 29
+    # data_air["Second"][indices] = data_air["Second"][indices] - 30  
+    # data_air = data_air.pivot(columns='Second')
+    # data_air = data_air.resample('30s').mean().dropna()
+    data_air = data_air.resample('30s').mean().bfill()
+    ###### Merge Skin and Environmental Data and drop wrong data
+    training_set = pd.merge(data_skin, data_air, how='inner', left_index=True, right_index=True)
+    #print(training_set)
+    # index1 = training_set.index.get_loc("2018-02-19 21:00:30" )
+    # index2 = training_set.index.get_loc("2018-02-19 21:28:00" )
+    # training_set = training_set.drop(training_set.index[range(index1,index2)])
+    # with pd.option_context('display.max_rows', None, 'display.max_columns', 3):
+    #     print(training_set)
+    return training_set.dropna()#.ix[:"2018-02-25 16:25:00"]
+
+def process_data_Air_Sensation(Envir_File, vote_file):
+    """"
+    Prcoess Air temperature and Relative Humidity 
+    Temperature and Humidity is 10s interval, 
+
+    """
+
+    ####### process voting 
+    data_vote = pd.read_csv(vote_file)
+    data_vote.index = pd.to_datetime(data_vote.Time)
+    data_vote = data_vote.resample('10s').mean()
+
+    ####### process air temperature and relative humidity
+    data_air = pd.read_csv(Envir_File)
+    data_air.index = pd.to_datetime(data_air.Time)
+     # empty item filled with the value after it
+    data_air= data_air.resample('10s').mean().bfill()
+    ###### Merge Skin and Environmental Data and drop wrong data
+    training_set = pd.merge(data_vote, data_air, how='outer', left_index=True, right_index=True)
+    # index1 = training_set.index.get_loc("2018-02-19 21:00:30" )
+    # index2 = training_set.index.get_loc("2018-02-19 21:28:00" )
+    # training_set = training_set.drop(training_set.index[range(index1,index2)])
+    # with pd.option_context('display.max_rows', None, 'display.max_columns', 3):
+    #     print(training_set)
+    return training_set
+
+def process_data_Air_Skin_Sensation(skin_File, Envir_File, vote_file):
+    ####### process voting
+    data_vote = pd.read_csv(vote_file)
+    data_vote.index = pd.to_datetime(data_vote.Time)
+    #print(data_vote)
+    ####### process skin temperature
+    data_skin = pd.read_csv(skin_File)
+    data_skin.index = pd.to_datetime(data_skin.Time)
+    data_skin = data_skin.resample('60s', closed="right").mean()
+    data_skin_0 = pd.DataFrame(np.array([data_skin[(data_skin.index == t)].mean() 
+        for t in data_vote.index]), columns = ["Skin_0m"], index = data_vote.index)
+    data_skin_1 = pd.DataFrame(np.array([data_skin[(data_skin.index == t - dt.timedelta(minutes = 1))].mean() 
+        for t in data_vote.index]), columns = ["Skin_1m"], index = data_vote.index)
+    data_skin_2 = pd.DataFrame(np.array([data_skin[(data_skin.index == t - dt.timedelta(minutes = 2))].mean() 
+        for t in data_vote.index]), columns = ["Skin_2m"], index = data_vote.index)
+    data_vote_skin = data_vote.join(data_skin_0)
+    data_vote_skin = data_vote_skin.join(data_skin_1)
+    data_vote_skin = data_vote_skin.join(data_skin_2)
+
+    ####### process air temperature and relative humidity
+    data_air = pd.read_csv(Envir_File)
+    data_air.index = pd.to_datetime(data_air.Time)
+    # empty item filled with the value after it
+    data_air= data_air.resample('60s').mean().bfill()
+    data_air_0 = pd.DataFrame(np.array([data_air[(data_air.index == t)].mean()
+        for t in data_vote.index]), columns = ["Temperature_0m", "Humidity_0m"], index = data_vote.index)
+    data_air_1 = pd.DataFrame(np.array([data_air[(data_air.index == t - dt.timedelta(minutes = 1))].mean()  
+        for t in data_vote.index]), columns = ["Temperature_1m", "Humidity_1m"], index = data_vote.index)
+    data_air_2 = pd.DataFrame(np.array([data_air[(data_air.index == t - dt.timedelta(minutes = 2))].mean()  
+        for t in data_vote.index]), columns = ["Temperature_2m", "Humidity_2m"], index = data_vote.index)
+    data_vote_skin_air = data_vote_skin.join(data_air_0)
+    data_vote_skin_air = data_vote_skin_air.join(data_air_1)
+    data_vote_skin_air = data_vote_skin_air.join(data_air_2)
+    return data_vote_skin_air.dropna()
+
+def process_data_Action_Air():
     data = pd.read_csv('environment.csv')
     # Dataset
     data.index = pd.to_datetime(data.Time)
-    data_m = data#.resample('2T').mean()
+    data_m = data.resample('2T').mean()
+
+
+def main():
+    location = "csv/user3/"
+    tag = "user3-2018-2-19"
+    inSampleTime = "2018-02-24 22:00:00"
+    vote_File = location + "voting-" + tag + ".csv"
+    skin_File = location + "temp-" + tag + ".csv"
+    envir_File = location + "environment-" + tag + ".csv"
+    #data_m = process_data_Sen_Sat(vote_file)
+    #plot_sat_sen(data_m, location + "Voting_" + tag, "Satisfaction", "Sensation", tag)
+    #data_m = process_data_Skin_Air(skin_File, envir_File)
+    #plot_relationship(data_m, location + "Voting_" + tag, "Sensation", "Satisfaction")
+    #plot_observation(data_m, location + "Skin_Temperature_" + tag, "Temperature", "Skin", False, tag, 29, 37)
+    #data_m = process_data_Air_Sensation(envir_File,vote_File)
+    #print(data_m)
+    #plot_observation(data_m, location + "Temperature_Humidity_" + tag, "Temperature", "Humidity", False, tag)
+    #plot_observation(data_m, location + "Temperature_Sensation_" + tag, "Temperature", "Sensation", True, tag, -3.5, 3.5)
+    #plot_observation(data_m, location + "Temperature_Satisfaction_" + tag, "Temperature", "Satisfaction", False, tag)
+   
+    # KernelRidgeRegression_skin(data_m, [
+    #  ("Temperature")], "Skin", location + "Skin_Environment_" + tag, tag, True)
+    data_m = process_data_Air_Skin_Sensation(skin_File, envir_File, vote_File)
+    neural_network(data_m, location + "Sensation_" + tag, False)
+    
 
 if __name__ == '__main__':
     main()
+

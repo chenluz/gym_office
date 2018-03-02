@@ -77,6 +77,7 @@ class InfluxDB():
             #print(value)
             value_list.append(value[column])
         return np.mean(np.array(value_list))
+        
 
     def get_derivative_db(self, column, table, interval):
         _query = 'select derivative(mean('+ column +')) from '+ table +' where time > now() - '+ interval + ' group by time('+ interval +') ;'
