@@ -8,6 +8,9 @@ import time
 import math
 import pickle
 from sklearn.kernel_ridge import KernelRidge
+from keras.models import Sequential
+from keras.layers import Dense
+import numpy as np
 
 ## ref: https://github.com/CenterForTheBuiltEnvironment/comfort_tool/blob/master/contrib/comfort_models.py
 
@@ -19,15 +22,16 @@ class airEnviroment():
     def __init__(self):  
         pass
 
-    def get_air_temp(self,action, pre_air_temp):
-        loaded_model = pickle.load(open("kernel_regression_model.sav", 'rb'))
-        result = loaded_model.predict([[action, pre_air_temp]])
+    def get_air_temp(self,action, pre_Ta):
+        loaded_model = pickle.load(open("user3/envSimulator_Temperature_kernel.sav", 'rb'))
+        result = loaded_model.predict([[action, pre_Ta]])
         return result
 
-    def get_air_humidity(self,action, pre_air_humid):
-        loaded_model = pickle.load(open("kernel_regression_model_humidity.sav", 'rb'))
-        result = loaded_model.predict([[action, pre_air_humid]])
+    def get_air_humidity(self,action, pre_Rh):
+        loaded_model = pickle.load(open("user3/envSimulator_Humidity_kernel.sav", 'rb'))
+        result = loaded_model.predict([[action, pre_Rh]])
         return result
+
 
 class airVelocity():
     """
@@ -58,13 +62,23 @@ class airVelocity():
 
 class skinTemperature():
     """
-    Calculate skin temperature based on air velocity
-
+    Calculate skin temperature based on environmental variables
     """
 
     def __init__(self):  
         pass
     
+
+    def skin_SVR(self, cur_Ta, cur_Rh):
+        """
+        A Support Vecotr Regression using 
+        air temperature and air humidity 
+        to predict skin temperature
+
+        """
+        loaded_model = pickle.load(open("user3/Skin_SVR.sav", 'rb'))
+        result = loaded_model.predict([[cur_Ta, cur_Rh]])
+        return result
 
     def comfPierceSET(self, ta, tr, rh, clo, vel=0.1, met = 1.1, wme = 0, BODYWEIGHT = 69.9, BODYSURFACEAREA = 1.8258):
         """
@@ -273,6 +287,40 @@ class skinTemperature():
 class feedback():
     def __init__(self):  
         pass
+
+
+    def Satisfaction_neural(self, cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta,  pre_Rh):
+        X = self.process_state(cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta, pre_Rh).reshape(-1, 6)
+        min_lable = -3
+        model = Sequential()
+        model.add(Dense(6, input_dim=6, activation='relu'))
+        model.add(Dense(12, activation='relu'))
+        model.add(Dense(7, activation='softmax'))
+        model.compile(loss='categorical_crossentropy',
+                  optimizer='adam', 
+                  metrics=['accuracy'])
+        model.load_weights('user3/Satisfaction_ANN.h5')
+        classes = model.predict(X)
+        result = [np.argmax(values) + min_lable for values in classes][0]
+        return result
+
+    def process_state(self, cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta, pre_Rh):
+        ############need to change for different users #############
+        Ts_min = 29.53
+        Ts_max = 35.9
+        Ta_min = 21.94
+        Ta_max = 29.7
+        Rh_min = 17.73
+        Rh_max = 38.84
+        cur_Ts = (cur_Ts - Ts_min)/(Ts_max - Ts_min)
+        cur_Ta = (cur_Ta - Ta_min)/(Ta_max - Ta_min)
+        cur_Rh = (cur_Rh - Rh_min)/(Rh_max - Rh_min)
+        pre_Ts = (pre_Ts - Ts_min)/(Ts_max - Ts_min)
+        pre_Ta = (pre_Ta - Ta_min)/(Ta_max - Ta_min)
+        pre_Rh = (pre_Rh - Rh_min)/(Rh_max - Rh_min)
+        return np.array([cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta, pre_Rh])
+        ############need to change for different users #############
+
 
     def comfPMV(self, ta, tr, rh,  clo, vel=0.1, met =1.1, wme = 0):
         """

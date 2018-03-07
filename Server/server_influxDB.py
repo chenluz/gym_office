@@ -188,7 +188,7 @@ def writeToDB_Occupant():
                     value = voting
                     json_body = [
                         {
-                            "measurement": "thermal_satisfaction",
+                            "measurement": "thermal_sensation",
                              "tags": {
                                 "name": username,
                             },

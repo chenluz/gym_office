@@ -11,8 +11,8 @@ from .simulator import airEnviroment
 from .simulator import skinTemperature
 from .simulator import feedback
 from sklearn.preprocessing import MinMaxScaler
-
-
+import csv
+import datetime
 
 Clo_initial = 1.2
 Rh_initial = 20
@@ -25,23 +25,23 @@ Rh_out_initial = 60
 class OfficeSimulateEnv(gym.Env):
 
 	def __init__(self):
-		self.nS = 1
+		self.nS = 3
 		self.nA = 7
 		self.is_terminal = False
 		self.step_count = 0
 		self.cur_Ta = 0
 		self.cur_Rh = 0
+		self.cur_Tskin = 0
+		self.action = 0
+		self.reward = 0
 	
 
-	def get_state(self, Ta, Tr, Rh):
+	def get_state(self, cur_Ta, cur_Ha):
 		Tskin_obj = skinTemperature()
-		Tskin = Tskin_obj.comfPierceSET(Ta, Tr, Rh, Clo_initial)
-		# get PMV and PPD based on environmental parameter
-		feedback_obj = feedback()
-		[pmv, ppd] = feedback_obj.comfPMV(Ta, Tr, Rh, Clo_initial)
+		Tskin = Tskin_obj.skin_SVR(cur_Ta, cur_Ha)
 
-		ob = self.process_state([Ta, Rh, Tskin, pmv,Ta_out_initial, Rh_out_initial])
-		return [Ta, Rh, Tskin, pmv,Ta_out_initial, Rh_out_initial], ob
+		ob = self.process_state([Tskin, cur_Ta, cur_Ha])
+		return [Tskin, cur_Ta, cur_Ha], ob
 
 
 	def _step(self, action):
@@ -56,130 +56,67 @@ class OfficeSimulateEnv(gym.Env):
 		reward: float , PMV value
 
 		"""
-		# # get fan speed and temperature set point from action 
-		# fan = Action_Dict[action][1]
-		# T_setpoint = Action_Dict[action][0]
-		# # get air velocity after action
-		# action_obj = airVelocity()
-		# Vel = action_obj.get_air_velocity(action)
 
-		# get air temperature after action
+		# get air temperature and air humidity after action
+		self.action = action
+		pre_Ta = self.cur_Ta
+		pre_Rh = self.cur_Rh
+		pre_Tskin = self.cur_Tskin
 		air = airEnviroment()
-		Ta  = air.get_air_temp(action, self.cur_Ta)[0]
-		Rh = air.get_air_humidity(action, self.cur_Rh)[0]
+		self.cur_Ta  = air.get_air_temp(action, self.cur_Ta).flatten()[0]
+		self.cur_Rh  = air.get_air_humidity(action, self.cur_Rh).flatten()[0]
 
-		# # if first heater on, increase 2
-		# if Action_Dict[action][0] == 1:
-		# 	Ta = self.cur_Ta + 0.5
-		# else:
-		# 	T_increase = sum(Action_Dict[action])*0.25
-		# 	Ta = self.cur_Ta + T_increase
+		# get old skin temperature after action
+		Tskin_obj = skinTemperature()
+		self.cur_Tskin = Tskin_obj.skin_SVR(self.cur_Ta, self.cur_Rh)[0]
 
-		self.cur_Ta = Ta
-		self.cur_Rh = Rh
-
-		#get other envrionmental parameter:
-		# air temperature, mean radiant temperature, humidity, cloth 
-		Tr = Ta - 2
-		Clo = Clo_initial 
-		# # get skin temperature based on envrionmental parameter and individual parameter 
-		# Tskin_obj = skinTemperature()
-		# Tskin = Tskin_obj.comfPierceSET(Ta, Tr, Rh, Clo)
-		# get PMV and PPD based on environmental parameter
-   		
-   		# -0.5-0.5 Neutural, 0.5-1.5: slight Warm, # 1.5-2.5: Warm, #2.5: Hot
+		# get thermal satisfaction after action
 		feedback_obj = feedback()
-		[pmv, ppd] = feedback_obj.comfPMV(Ta, Tr, Rh, Clo)
-		state = self.process_pmv(pmv)
-	
-		#ob = self.process_state([Ta, Rh,Tskin, pmv, Ta_out_initial,Rh_out_initial])
-		
-		reward = -ppd/100
+		self.reward = feedback_obj.Satisfaction_neural(self.cur_Tskin, self.cur_Ta, self.cur_Rh,
+			pre_Tskin, pre_Ta, pre_Rh)
+
+		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh])
 
 		self.step_count += 1
-		if self.step_count > 55:
+		if self.step_count > 100:
 			self.is_terminal = True
 			self.step_count = 0
 		#return ob, reward, self.is_terminal, {}
-		return state, reward, self.is_terminal, {}
+		return state, self.reward, self.is_terminal, {}
 
 
 	def _reset(self):
 		self.is_terminal = False
 		self.cur_Ta = 21
 		self.cur_Rh = 25
-		Tr = self.cur_Ta - 2
-		Clo = Clo_initial 
-		feedback_obj = feedback()
-		[pmv, ppd] = feedback_obj.comfPMV(self.cur_Ta, Tr, self.cur_Rh, Clo)
-		state = self.process_pmv(pmv)
-		# # get initial velocity randomly
-		# Ta_initial = np.random.uniform(18,30)
-		# self.cur_Ta = Ta_initial
-		# Tr_initial = Ta_initial - 2
-		# Rh_initial = np.random.choice(np.arange(20,80))
-
-		# action = np.random.choice(self.nA)
-		# #action_obj = airVelocity()
-		# #Vel_initial = action_obj.get_air_velocity(action)
-		# Tskin_obj = skinTemperature()
-		# Tskin_initial = Tskin_obj.comfPierceSET(Ta_initial, Tr_initial, 
-		# 	Rh_initial, Clo_initial)
-		# # get PMV and PPD based on environmental parameter
-		# feedback_obj = feedback()
-		# [pmv_initial, ppd_initial] = feedback_obj.comfPMV(Ta_initial, Tr_initial, 
-		# 	Rh_initial, Clo_initial)
-		# pmv_initial= pmv_initial
-
-		# ob = self.process_state([Ta_initial,Rh_initial, Tskin_initial,
-		#  pmv_initial, Ta_out_initial,Rh_out_initial])
+		Tskin_obj = skinTemperature()
+		self.cur_Tskin = Tskin_obj.skin_SVR(self.cur_Ta, self.cur_Rh)
+		state = self.process_state([self.cur_Ta, self.cur_Rh, self.cur_Tskin])
 		return state
 
-	def process_pmv(self, pmv):
-		if (-0.5 < pmv < 0.5):
-			state = 0 # neutural 
-		elif ( 0.5 < pmv < 1.5):
-			state = 1 # slightly warm 
-		elif (1.5 < pmv < 2.5):
-			state = 2 # warm
-		elif (2.5 < pmv):
-			state = 3 # hot 
-		elif ( -1.5 < pmv < -0.5):
-			state = -1 # slight cool
-		elif ( -2.5 < pmv < -1.5):
-			state = -2 # cool
-		elif ( pmv < -2.5):
-			state = -3 # cold
-		return state
 
 	def process_state(self, state):
 		# process state 
-		state[0] = (state[0] - 18)*1.0/(30 - 18) # air temperature
-		state[1] = (state[2] - 20)/(80 - 20) # relative humidity
-		state[2] = (state[3] - 29)/(36 - 29) # skin temperature
-		state[3] = (state[4] + 3.86)/(3.86 + 1.38) # pmv
-		# assume outdoor does not change for now
-		state[4] = 0 # outdoor air temperture
-		state[5] = 0 # outdoor relative humidity
+		state[0] = (state[0] - 21)*1.0/(30 - 21) # air temperature
+		state[1] = (state[1] - 20)/(80 - 20) # relative humidity
+		state[2] = (state[2] - 29)/(36 - 29) # skin temperature
 		return state
 
 
 	def _render(self, mode='human', close=False):
 		pass
 
+	def my_render(self, model='human', close=False):
+	    with open("render_simulator.csv", 'a', newline='') as csvfile:
+	        fieldnames = ['time', 'action', 'skin_temp_mean', 'skin_temp_deriv', 'air_temp_mean',
+	                    'air_temp_deriv', 'air_humi_mean', 
+	                    'thermal_sensation', 'reward']
+	        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+	        writer.writerow({fieldnames[0]: datetime.datetime.utcnow(), 
+	        	fieldnames[1]:self.action, 
+				fieldnames[2]:self.cur_Tskin, 
+				fieldnames[3]:self.cur_Ta, 
+				fieldnames[4]:self.cur_Rh, 
+				fieldnames[5]:self.reward})
 
-# Action_Dict = {0: [0, 0, 0], 1: [0, 0, 1], 2: [0, 0, 2], 3:[0, 1 , 0], 
-# 				4: [0, 1, 1], 5: [0, 1, 2], 6: [0, 2, 0], 7: [0, 2, 1], 8: [0, 2, 2],
-# 				9: [1, 0, 0], 10: [1, 0, 1], 11: [1, 0, 2], 12: [1, 1, 0], 13: [1, 1, 1], 
-# 				14: [1, 1, 2], 15: [1, 2, 0], 16: [1,2, 1], 17: [1, 2, 2], 18: [2, 0, 0],
-# 				19: [2, 0, 1], 20:[2, 0, 2], 21:[2, 1, 0], 22:[2, 1, 1], 23:[2, 1, 2], 
-# 				24:[2, 2, 0],25:[2, 2, 1],26:[2, 2, 2]}
-				
-# Action_Dict = {0: [21, 0], 1: [21, 1], 2: [21, 2], 3:[21, 3], 
-# 				4: [22, 0], 5: [22, 1], 6: [22, 2], 7: [22, 3], 8: [22, 4],
-# 				 9: [23, 0], 10: [23, 1], 11: [23, 2], 12: [23, 3], 13: [23, 4], 
-# 				14: [24, 0], 15: [24, 1], 16: [24, 2], 17: [24, 3], 18: [24, 4], 19: [24, 5],
-# 				20: [25, 0], 21: [25, 1], 22: [25, 2], 23: [25, 3], 24: [25, 4], 25: [25, 5],
-# 				26: [26, 1], 27: [26, 2], 28: [26, 3], 29: [26, 4], 30: [26, 5], 31: [26, 6],
-# 				32: [27, 1], 33: [27, 2], 34: [27, 3], 35: [27, 4], 36: [27, 5], 37: [27, 6], 38: [27, 7],
-# 				39: [28, 2], 40: [28, 3], 41: [28, 4], 42: [28, 5], 43: [28, 6], 44: [28, 7]}
+

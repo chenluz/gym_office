@@ -164,21 +164,22 @@ class InfluxDB():
 
         return obs_dict
 
-        def save_action_db(self, action):
-            json_body = [
-                {
-                    "measurement": "action",
-                     "tags": {
-                        "name": heater,
-                    },
-                    "time": utcnow,
-                    "fields": {
-                        "value": action,
-                    }
+    def save_action_db(self, action):
+        utcnow = datetime.datetime.utcnow()
+        json_body = [
+            {
+                "measurement": "action",
+                 "tags": {
+                    "name": "heater",
+                },
+                "time": utcnow,
+                "fields": {
+                    "value": int(action),
                 }
-            ]
+            }
+        ]
 
-            self.client.write_points(json_body)
+        self.client.write_points(json_body)
 
 
 
