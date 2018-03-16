@@ -19,7 +19,7 @@ class OfficeEnv(gym.Env):
 		self.plugwise = plugWise("128.2.108.76", 8080)
 		self.db = InfluxDB(host='localhost', port=8086, username='chenlu',
             password='research', database='CMUMM409office')
-		self.nA = len(Action_Dict)
+		self.nA = len(Action_Dict_4)
 		self.nS = 6
 		self.step_counter = 20
 		self.action = 0 
@@ -65,7 +65,7 @@ class OfficeEnv(gym.Env):
 		a = 0
 		print("action:" + str(action)) 
 		self.db.save_action_db(action)
-		[heater_1, heater_2, heater_3, heater_4] = Action_Dict[action] 
+		[heater_1, heater_2, heater_3, heater_4] = Action_Dict_4[action] 
 		print (DEVICE_NAME[DEVICE[0]], ACTION_Local[heater_1])
 		self.plugwise.send_command(DEVICE[0], ACTION_Local[heater_1]) 
 		print (DEVICE_NAME[DEVICE[1]], ACTION_Local[heater_2])
@@ -156,6 +156,9 @@ Action_Dict = {0: [0, 0, 0, 0], 1: [0, 0, 0, 1], 2: [0, 0, 1, 0], 3:[0, 1, 0, 0]
 				4: [1, 0, 0, 0], 5: [0, 0, 1, 1], 6: [0, 1, 0, 1], 7: [1, 0, 0, 1],
 				8: [0, 1, 1, 0], 9: [1, 0, 1, 0], 10: [1, 1, 0, 0], 11:[0, 1, 1, 1],
 				12: [1, 0 ,1, 1], 13: [1, 1, 0, 1], 14: [1, 1, 1, 0], 15:[1, 1, 1, 1]}
+
+Action_Dict_4 = {0: [0, 0, 0, 0], 1: [1, 1, 0, 0], 2: [0, 0, 2, 2], 3:[1, 1, 1, 1]}
+
 
 Obser_Order = ['skin_temp_mean', 'skin_temp_deriv', 'air_temp_mean',
 				'air_temp_deriv', 'air_humi_mean', 
