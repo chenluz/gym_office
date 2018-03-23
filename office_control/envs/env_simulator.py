@@ -36,6 +36,10 @@ from mpl_toolkits.mplot3d import Axes3D
 from sklearn import linear_model
 from sklearn.model_selection import cross_val_predict
 from psychrochart.chart import PsychroChart
+from matplotlib.lines import Line2D
+import statistics
+import scipy as sp
+import scipy.stats
 
 from numpy.random import seed
 seed(1)
@@ -43,7 +47,14 @@ from tensorflow import set_random_seed
 set_random_seed(2)
 
 
-
+skin_low_limit = 25
+skin_high_limit = 37
+air_low_limit = 16.5
+air_high_limit = 32
+humidity_low_limit = 12
+humidity_high_limit = 44
+clo = {"user1": "0.89", "user2":"1.01", "user3":"1.01", 
+"user4":"0.89", "user5":"1.01", "user6": "0.72"}
 
 # ref: http://www.statsmodels.org/dev/examples/notebooks/generated/statespace_sarimax_stata.html
 def plot_relationship(data, pngName, param1, param2):
@@ -84,6 +95,7 @@ def plot_sat_sen(data, pngName, param1, param2, tag):
     ax.set_xlabel('Satisfaction')
     ax.set_ylabel('Sensation')
     plt.title(tag)
+    plt.tight_layout()
     plt.savefig(pngName + "_scatter_size")
 
 
@@ -121,6 +133,7 @@ def plot_observation(data, pngName, param1, param2, scatter, tag,
     ax.set_ylabel(param2)
     ax.plot(data[param1], data[param2], "r.") 
     plt.title(tag)
+    plt.tight_layout()
     plt.savefig(pngName + "_relation")
     plt.close()
     return 
@@ -150,6 +163,7 @@ class envSimulator():
         self.data = self.process_data_Action_Air(env_File)[data_list].dropna()
         #self.analyze_data(self.data)
         self.X = self.data[input_list[0:3]]
+        print(self.X)
         scalerX = MinMaxScaler()
         scalerX.fit(self.X)
         self.X = scalerX.transform(self.X)
@@ -157,8 +171,12 @@ class envSimulator():
         scalerY = MinMaxScaler()
         scalerY.fit(self.Y)
         self.Y= scalerY.transform(self.Y)
+        self.X_max = scalerX.data_max_
+        self.X_min = scalerX.data_min_
         self.Y_max = scalerY.data_max_
         self.Y_min = scalerY.data_min_
+        print(self.X_max, self.X_min)
+        print(self.Y_max, self.Y_min)
         self.train_X, self.test_X, self.train_Y, self.test_Y = train_test_split(
             self.X, self.Y, test_size=0.4, random_state=42)
         self.output = output
@@ -290,6 +308,7 @@ class envSimulator():
         ax.fill_between(ci.index, ci.ix[:,0], ci.ix[:,1], color='r', alpha=0.1)
 
         legend = ax.legend(loc='lower right')
+        plt.tight_layout()
         plt.savefig(self.filename + "_" + self.output + "_" + "SARIMAXRegression")
         return
 
@@ -372,7 +391,8 @@ class envSimulator():
             kNN_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
             "g.", label='kNN') 
         plt.title(self.output)
-        legend = ax.legend(loc='lower right')     
+        legend = ax.legend(loc='lower right') 
+        plt.tight_layout()    
         plt.savefig(self.filename + "_" + self.user + "_" + self.output + "_relation")
         plt.close()
         return    
@@ -417,7 +437,7 @@ class envSimulator():
         ax2.set_ylabel("Action")
         legend = ax2.legend(loc='upper right')
         plt.title("")
-        fig.tight_layout()
+        plt.tight_layout()
         plt.savefig(self.filename + "Air_Temperature_Action_30s")
         plt.close()
         return data
@@ -458,6 +478,7 @@ class envSimulator():
             ax.plot(data.loc[data['Previous Action'] == i]["outdoor Previous Air Temperature"],
              data.loc[data['Previous Action'] == i]["Delta"], color[i], markersize="10", label='Action' + str(i))
         legend = ax.legend(loc='lower left')
+        plt.tight_layout()
         plt.savefig(self.filename + self.user + "Outdoor Air Temperature_Action")
         plt.close()
 
@@ -483,8 +504,9 @@ class skinSimulator():
         self.user = user
         self.location = "csv/" + user + "/"
         self.tags = tags
-        self.filename = self.location + "Skin_" + user
-        self.data = self.combine_data()
+        self.filename = self.location + "skin/" + "Skin_" + user
+        self.data, self.outdoor = self.combine_data()
+        self.analyze_data_Ta_Rh(self.data)
         self.X = self.data[input_list]
         scalerX = MinMaxScaler()
         scalerX.fit(self.X)
@@ -586,10 +608,9 @@ class skinSimulator():
 
         pd.DataFrame({"kernel": kernel_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min},
             index = range(0, len(self.data.index)*5, 5)).plot(ax=ax, style='r') 
-        
 
-
-        ax.set(title="Testing Error: (Kernel:%f); (SVR:%f)" % (MSE_ker, MSE_SVR), xlabel='Time', ylabel=self.output)
+        ax.set(title="Testing Error: (Kernel:%f); (SVR:%f)" % (MSE_ker, MSE_SVR), 
+            xlabel='Time', ylabel=self.output)
         
 
         # ax2 = ax.twinx()
@@ -600,9 +621,9 @@ class skinSimulator():
 
         #plot regression line
         fig, ax = plt.subplots(figsize=(12,6))
-        ax.set_xlim(17, 31)
+        ax.set_xlim(air_low_limit, air_high_limit)
         ax.set_xlabel('Air Temperature($^\circ$C)')
-        ax.set_ylim(26, 37)
+        ax.set_ylim(skin_low_limit, skin_high_limit)
         ax.set_ylabel('Skin Temperature($^\circ$C)')
         # ax.tick_params('y', colors='r')
         # ax.tick_params('x', colors='g')
@@ -615,40 +636,103 @@ class skinSimulator():
             SVR_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
             "g.", label='SVR') 
         plt.title(self.user)
-        legend = ax.legend(loc='lower right')     
+        legend = ax.legend(loc='lower right') 
+        plt.tight_layout()   
         plt.savefig(self.filename + "_" + self.output + "_relation")
         plt.close()
         return    
- 
 
+    def analyze_data_Ta_Rh(self, data):
+        #https://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.html
+        marker_list = ["o", "*", "+", "s", "p", "D"]
+        color_list = [  "b", "#02B2FF", "#02FFFF", "#28FF02", "y", "#FF9402", "#FF5602", "r", "#800000"]
+        data["Date"] = data.index.date
+        output_H = range(28, 37, 1)
+        output_L = range(27, 36, 1)
+        fig, ax = plt.subplots(figsize=(12,6))
+        plot_x = "Air Temperature"
+        plot_y = "Relative Humidity"
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylabel("Relative Humidity (%)", fontsize=18)
+        ax.set_xlabel('Air Temperature ($^\circ$C)', fontsize=18)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_xlim(air_low_limit, air_high_limit + 3)
+        plt.xticks(np.arange(17, air_high_limit, 1.0))
+        date_list = data["Date"].unique()
+        marker_list = ["o", "*", "p", "s", "d", "^"]
 
+        for j in range(len(date_list)):
+            for i in range(len(output_H)):
+                ax.scatter(data.loc[(data["Skin Temperature"] > output_L[i]) & (data["Skin Temperature"] <= output_H[i])
+                 & (data["Date"] == date_list[j])][plot_x], 
+                    data.loc[(data["Skin Temperature"] > output_L[i]) & (data["Skin Temperature"] <= output_H[i])
+                     & (data["Date"] == date_list[j])][plot_y],
+                 color = color_list[i], marker=marker_list[j], label= str(date_list[j]))
+      
+        plt.title(self.user + ", Clo:" + clo[self.user] + ", Counts:" + str(len(data.index)) ,fontsize=20)
+        #legend = ax.legend()
+        custom_legend = [Line2D([0], [0], marker= "+", color='#E5E8E8', 
+            markerfacecolor='#E5E8E8')] 
+        custom_legend = custom_legend + [Line2D([0], [0], marker = m, color='#E5E8E8', 
+         markerfacecolor='g', markersize="10") for m in marker_list]
+        lengend_list = ["     Outdoor:(Ta,Rh)"]
+        lengend_list = lengend_list + [str(date_list[i]) + ":" 
+            + str(self.outdoor[i]) for i in range(len(date_list))]
+        legend1 = plt.legend(custom_legend, lengend_list, loc='upper right',
+         fontsize=12)  
+
+        custom_legend = [Line2D([0], [0], marker= "o",  color='#E5E8E8', 
+         markerfacecolor = color, markersize="8") for color in color_list]
+        lengend_list = []
+        lengend_list = ["27$^\circ$C < Skin <= 28$^\circ$C", "28$^\circ$C < Skin <= 29$^\circ$C", 
+        "29$^\circ$C < Skin <= 30$^\circ$C", "30$^\circ$C < Skin <= 31$^\circ$C", 
+        "31$^\circ$C < Skin <= 32$^\circ$C", "32$^\circ$C < Skin <= 33$^\circ$C",
+        "33$^\circ$C < Skin <= 34$^\circ$C", "34$^\circ$C < Skin <= 35$^\circ$C",
+        "35$^\circ$C < Skin <= 36$^\circ$C"]
+        plt.legend(custom_legend, lengend_list , loc='lower right',
+         fontsize=12) 
+        plt.gca().add_artist(legend1)
+        plt.tight_layout()
+        plt.savefig(self.filename + "_" + plot_x + "_" + plot_y)
+        plt.close()
+  
 
     def combine_data(self):
         i = 0
+        outdoor_list = []
         for tag in self.tags:
+            date = tag[6:]
             skin_File = self.location + "temp-" + tag + ".csv"
             air_File = self.location + "environment-" + tag + ".csv"
-            one_data = self.process_data_Skin_Air(skin_File, air_File)
+            outdoor_File = self.location + "environment-outdoor-" + date + ".csv"
+            one_data, output = self.process_data_Skin_Air(skin_File, air_File, outdoor_File)
+            outdoor_list.append(output)
             if i == 0:
                 data = one_data
             else: 
                 data = data.append(one_data)
-            plot_observation(one_data, self.location + "Temperature_Humidity_" + tag, 
-                 "Air Temperature", "Relative Humidity", False, tag, 17, 31, 12, 60)
-            plot_observation(one_data, self.location + "Temperature_Skin_" + tag, 
-                "Air Temperature", "Skin Temperature", False, tag, 17, 31, 26, 37)
+            plot_observation(one_data, self.location + "skin/" + "Temperature_Humidity_" + tag, 
+                 "Air Temperature", "Relative Humidity", False, tag, air_low_limit, air_high_limit, 
+                 humidity_low_limit, humidity_high_limit)
+            plot_observation(one_data, self.location + "skin/" + "Temperature_Skin_" + tag, 
+                "Air Temperature", "Skin Temperature", False, tag, air_low_limit, air_high_limit, 
+                 skin_low_limit, skin_high_limit)
             i += 1
-        plot_observation(data, self.location + "Temperature_Humidity_" + self.user, 
-                 "Air Temperature", "Relative Humidity", False, self.user, 17, 31, 12, 60)
-        plot_observation(data, self.location + "Temperature_Skin_" + self.user, 
-                "Air Temperature", "Skin Temperature", False, self.user, 17, 31, 26, 37)
-        plot_observation(data, self.location + "Humidity_Skin_" + self.user, 
-                "Relative Humidity", "Skin Temperature", False, self.user,  12, 40, 26, 37)
+        plot_observation(data, self.location + "skin/" + "Temperature_Humidity_" + self.user, 
+                 "Air Temperature", "Relative Humidity", False, self.user, air_low_limit, air_high_limit, 
+                 humidity_low_limit, humidity_high_limit)
+        plot_observation(data, self.location + "skin/" + "Temperature_Skin_" + self.user, 
+                "Air Temperature", "Skin Temperature", False, self.user, air_low_limit, air_high_limit, 
+                 skin_low_limit, skin_high_limit)
+        plot_observation(data, self.location + "skin/" + "Humidity_Skin_" + self.user, 
+                "Relative Humidity", "Skin Temperature", False, self.user,  humidity_low_limit, 
+                humidity_high_limit, skin_low_limit, skin_high_limit)
         self.plot_3D_observation(data)
-        return data  
+        return data, outdoor_list
 
 
-    def process_data_Skin_Air(self, skin_File, air_File):
+    def process_data_Skin_Air(self, skin_File, air_File, outdoor_File):
         """"
         Prcoess Air temperature and Relative Humidity 
         Temperature and Humidity is 10s interval, 
@@ -656,6 +740,8 @@ class skinSimulator():
 
         Merge Skin and Environment Data
         """
+        data_outdoor = pd.read_csv(outdoor_File, names = ["Time", "Outdoor_Temperature", "Outdoor_Humidity"])
+        outdoor =  (data_outdoor.mean().round()["Outdoor_Temperature"], data_outdoor.mean().round()["Outdoor_Humidity"])
 
         ####### process skin temperature
         data_skin = pd.read_csv(skin_File, names = ["Time", "Skin Temperature"])
@@ -682,8 +768,10 @@ class skinSimulator():
         # training_set = training_set.drop(training_set.index[range(index1,index2)])
         # with pd.option_context('display.max_rows', None, 'display.max_columns', 3):
         #     print(training_set)
-        return training_set.dropna()#.ix[:"2018-02-25 16:25:00"].ix["2018-02-19 21:00:00":]
+        return training_set.dropna(), outdoor#.ix[:"2018-02-25 16:25:00"].ix["2018-02-19 21:00:00":]
     
+
+
     def plot_3D_observation(self, data):
         ax = plt.figure(figsize=(12,10)).gca(projection='3d')
         ax.scatter(data["Air Temperature"], data["Relative Humidity"], 
@@ -691,6 +779,7 @@ class skinSimulator():
         ax.set_xlabel('Air Temperature')
         ax.set_ylabel('Relative Humidity')
         ax.set_zlabel('Skin Temperature')
+        plt.tight_layout()
         plt.savefig(self.filename + "_3D_relation")   
         plt.close()
 
@@ -713,11 +802,24 @@ class subjectiveSimulator():
         self.location = "csv/" + user + "/"
         self.tags = tags
         self.user  = user
-        self.filename = self.location + output + "_" + user
+        self.filename = self.location + "subjective/" + output + "_" + user
         self.output = output
-        self.data = self.combine_data()
-        #self.analyze_data_skin(self.data)
-        self.analyze_data_Ta_Rh(self.data)
+        data_with_nan, self.outdoor = self.combine_data()
+        self.analyze_data_Ta_Rh(data_with_nan)
+        if self.output == "Sensation":
+            self.analyze_data_scatter(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
+            self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
+            self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
+            self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
+        else:
+            self.analyze_data_scatter_h(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
+            self.analyze_data_scatter_h(data_with_nan, "Skin_" , skin_low_limit, skin_high_limit)
+
+        ## to get last 5-minutes data will get more nan
+        self.data = data_with_nan.dropna()
+        self.analyze_data_delta(self.data, 3, "Temperature_")
+        self.analyze_data_delta(self.data, 3, "Skin_")
+       
         self.X = self.data.ix[:, ["Skin_0m", "Temperature_0m", "Humidity_0m",
               "Skin_5m", "Temperature_5m", "Humidity_5m"]].as_matrix()
         self.Y = np.array(self.data[output].as_matrix()).reshape(-1, 1)
@@ -745,7 +847,6 @@ class subjectiveSimulator():
         model = Sequential()
         model.add(Dense(6, input_dim=6, activation='relu'))
         model.add(Dense(12, activation='relu'))
-        model.add(Dense(12, activation='relu'))
         model.add(Dense(lable_num, activation='softmax'))
         # Compile model
         model.compile(loss='categorical_crossentropy',
@@ -753,7 +854,7 @@ class subjectiveSimulator():
                   metrics=['accuracy'])
         
         model.fit(X_scaled, dummy_y, epochs=200, batch_size=1, verbose=0)
-        model.save_weights(self.location + self.output + "_ANN.h5")
+        model.save_weights(self.location + "subjective/" + self.user + "_"  + self.output + "_ANN.h5")
         self.loss_and_metrics = model.evaluate(X_scaled, dummy_y, batch_size=1)
         classes = model.predict(X_scaled, batch_size=1)
         self.pred_Y = [np.argmax(values) + min(self.Y.flatten()) for values in classes]
@@ -780,7 +881,7 @@ class subjectiveSimulator():
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_ylim(-3.2, 3.2)
         ax.set_ylabel('Thermal ' + self.output)
-        ax.set_xlabel('Skin Temperature past 5 minutes increment($^\circ$C)')
+        ax.set_xlabel('Skin Temperature past 5 minutes gradiant($^\circ$C)')
         ax.plot(self.data["Skin_0m"] - self.data["Skin_4m"], self.data[self.output],
          "b.", markersize=10, label='Observation')
         ax.plot(self.data["Skin_0m"] - self.data["Skin_4m"], self.pred_Y,
@@ -789,12 +890,14 @@ class subjectiveSimulator():
         plt.title(method_name + ":(categorical_crossentropy:%f; accuracy:%f;)" % (self.loss_and_metrics[0],
          self.loss_and_metrics[1]))
         legend = ax.legend(loc='lower right')     
-        plt.savefig(self.filename + "_Delta_" + method_name )
+        plt.savefig(self.filename  + "_Delta_" + method_name )
         plt.close()
 
         self.data["Prediction"] = self.pred_Y
-        color = ["r", "#EB631B", "#1B86EB", "#58FF33", "#186A06"]
-        #color = [ "b", "#1B86EB", "#58FF33", "#EB631B", "r"]
+        if(self.output == "Satisfaction"):
+            color = ["r", "#EB631B", "#1B86EB", "#58FF33", "#186A06"]
+        else:
+            color = [ "b", "#1B86EB", "#58FF33", "#EB631B", "r"]
         output = [-2,-1,0,1,2]
         fig, ax = plt.subplots(figsize=(12,6))
         plot_x = "Temperature_0m"
@@ -805,105 +908,266 @@ class subjectiveSimulator():
         ax.set_xlabel('Air Temperature ($^\circ$C)')
         #ax.set_xlim(18, 31.2)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        plt.xticks(np.arange(16, 31.2, 2.0))
+        plt.xticks(np.arange(16, air_high_limit + 1, 2.0))
         for i in range(len(output)):
             ax.scatter(self.data.loc[self.data["Prediction"] == output[i]][plot_x], 
                 self.data.loc[self.data["Prediction"] == output[i]][plot_y],
              color = color[i], label= self.output + ":" + str(output[i]))
-        plt.title(self.user)
-        legend = ax.legend(loc='upper left')     
+        plt.title(self.user + "_prediction")
+        legend = ax.legend(loc='upper left')   
+        plt.tight_layout()  
         plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + method_name)
         plt.close()   
 
 
-    def analyze_data_skin(self, data):
-        data["Delta"] = data["Skin_0m"] - data["Skin_4m"]
-        #plot regression line
+    def mean_confidence_interval(self, data, confidence=0.95):
+        a = 1.0*np.array(data)
+        n = len(a)
+        m, se = np.mean(a), scipy.stats.sem(a)
+        h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
+        return m, h
+
+
+    def analze_data_violin(self, data, input_, limit_low, limit_high):
+        output = [ -3, -2,-1, 0, 1, 2, 3]
+        fig, ax = plt.subplots(figsize=(12,6))
+        plot_x = input_
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_xlim(0, 8)
+        ax.set_xlabel('Thermal ' + self.output, fontsize=18)
+        if input_ == "Temperature_0m": 
+            text = "Air"
+        elif input_ == "Skin_0m":
+            text = "Skin"
+        ax.set_ylabel(text + ' Temperature 1 Minutes Average($^\circ$C)' ,fontsize=18)
+        ax.set_ylim(limit_low, limit_high)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        #plt.xticks(np.arange(26, 36.2, 1.0))
+        all_data = []
+        median = []
+        mean = []
+        errors = []
+        for xlabel in output:
+            data_x = data.dropna().loc[data.dropna()["Sensation"] == xlabel][plot_x].tolist()
+            m, h =  self.mean_confidence_interval(data_x)
+            mean.append(m)
+            errors.append(h)
+            if(len(data_x)  == 0):
+                median.append(None)
+                all_data.append([0])
+            else:
+                median.append(statistics.median(data_x))
+                all_data.append(data_x)
+        ax.violinplot(all_data,
+           showmeans=False,
+           showmedians=True)
+        ax.plot(range(1, 8), median, color="r")
+        #ax.plot(range(1, 8), mean, color="b")
+        plt.errorbar(range(1, 8), mean, yerr=errors, fmt = 'o', color = 'g')
+
+        # add x-tick labels
+        plt.setp(ax, xticks=[y+1 for y in range(len(output))],
+             xticklabels=output)
+        ax.tick_params(labelsize = 18)
+        plt.title(self.user  + ", Clo:" + clo[self.user],  fontsize=20)
+        custom_legend = [Line2D([0], [0], marker= "o",  color='g', 
+             markerfacecolor = 'g', markersize="6"),
+             Line2D([0], [0],  color='r') ]
+        lengend_list = ["Mean and 0.95 Confidence Interval", "Median Line"]
+        plt.legend(custom_legend, lengend_list , loc='upper left', fontsize=14)   
+        plt.tight_layout()
+        #legend = ax.legend(loc='lower right')     
+        plt.savefig(self.filename + "_" + plot_x + "_violin")
+        plt.close()
+
+
+    def analyze_data_scatter(self, data, input_, limit_low, limit_high, date=""):
+        output = [ -3, -2,-1, 0, 1, 2, 3]
         for i in range(6):
             fig, ax = plt.subplots(figsize=(12,6))
-            plot_x = "Skin_"+str(i) +"m"
-            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-            ax.set_ylim(-3.2, 3.2)
-            ax.set_ylabel('Thermal ' + self.output)
-            ax.set_xlabel('Skin Temperature - ' + str(i) + 'minutes($^\circ$C)')
-            ax.set_xlim(26, 36.2)
+            plot_x = input_ + str(i) +"m"
             ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-            plt.xticks(np.arange(26, 36.2, 1.0))
-            correlation = pearsonr(data[plot_x], data[self.output])
-            ax.plot(data[plot_x], data[self.output],
-             "b.", label='Observed')
-      
-            plt.title(self.user + ": " + str(round(correlation[0], 2)))
-            #legend = ax.legend(loc='lower right')     
+            ax.set_xlim(-3.2, 3.2)
+            ax.set_xlabel('Thermal Sensation', fontsize=18)
+            if input_ == "Temperature_": 
+                text = "Air"
+            elif input_ == "Skin_":
+                text = "Skin"
+            ax.set_ylabel(text + 'Temperature - ' + str(i) + 'minutes($^\circ$C)', fontsize=18)
+            ax.set_ylim(limit_low, limit_high)
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            #plt.xticks(np.arange(26, 36.2, 1.0))
+            correlation = pearsonr(data.dropna()[plot_x], data.dropna()["Sensation"])
+
+            ax.plot(data["Sensation"], data[plot_x], 
+             "b.", markersize="9", label='Observed')
+            plt.title(self.user + ", Clo:" + clo[self.user] + ", Correlation: " + str(round(correlation[0], 2)), fontsize=20)   
+            plt.tight_layout() 
             plt.savefig(self.filename + "_" + plot_x)
             plt.close()
+
+
+    def analyze_data_scatter_h(self, data, input_, limit_low, limit_high, date=""):
+        output = [ -3, -2,-1, 0, 1, 2, 3]
+        color_list = [ "b", "#3399ff", "#33ffff",  "#33ff66", "#ff8000", "#ff4000", "#800000"]
+        for i in range(6):
+            fig, ax = plt.subplots(figsize=(12,6))
+            plot_x = input_ + str(i) +"m"
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.set_ylim(-3.2, 3.2)
+            ax.set_ylabel('Thermal Satisfaction', fontsize=18)
+            if input_ == "Temperature_": 
+                text = "Air"
+            elif input_ == "Skin_":
+                text = "Skin"
+            ax.set_xlabel(text + 'Temperature - ' + str(i) + 'minutes($^\circ$C)', fontsize=18)
+            ax.set_xlim(limit_low, limit_high)
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            #plt.xticks(np.arange(26, 36.2, 1.0))
+            correlation = pearsonr(data.dropna()[plot_x], data.dropna()["Satisfaction"])
+
+            for i in range(len(output)):
+                ax.scatter(data.loc[(data["Sensation"] == output[i])][plot_x], 
+                    data.loc[(data["Sensation"] == output[i])]["Satisfaction"],
+                 color = color_list[i])
+            plt.title(self.user + ", Clo:" + clo[self.user] + ", Correlation: " + str(round(correlation[0], 2)) , fontsize=20)
+            custom_legend = [Line2D([0], [0], marker= "o",  color='#E5E8E8', 
+             markerfacecolor = color, markersize="8") for color in color_list]
+            lengend_list = ["Cold", "Cool", 
+            "Slightly Cool", "Neutral", "Slightly Warm", 
+            "Warm", "Hot"]
+            plt.legend(custom_legend, lengend_list , loc='upper right',
+             fontsize=12)   
+            plt.tight_layout()
+            plt.savefig(self.filename + "_" + plot_x)
+            plt.close()
+
+
+    def analyze_data_delta(self, data, interval, input_, date=""):
+        data["Delta"] = data[input_+"0m"] - data[input_ + str(interval) + "m"]
+        output = [-3, -2,-1, 0, 1, 2, 3]
         fig, ax = plt.subplots(figsize=(12,6))
         plot_x = "Delta"
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_ylim(-3.2, 3.2)
-        ax.set_ylabel('Thermal ' + self.output)
-        ax.set_xlabel('Skin Temperature past 5 minutes increment($^\circ$C)')
+        ax.set_ylabel('Thermal ' + self.output,  fontsize=18)
+        if input_ == "Temperature_": 
+                text = "Air"
+        elif input_ == "Skin_":
+            text = "Skin"
+        ax.set_xlabel(text + ' Temperature past '+ str(interval) + ' minutes gradiant($^\circ$C)', fontsize=18)
         correlation = pearsonr(data[plot_x], data[self.output])
         ax.plot(data[plot_x], data[self.output],
          "b.", label='Observed')
   
-        plt.title(self.user + ": " + str(round(correlation[0], 2)))    
-        plt.savefig(self.filename + "_" + plot_x)
+        plt.title(self.user + "_" + date + ": " + str(round(correlation[0], 2)), fontsize=20)  
+        plt.tight_layout()  
+        plt.savefig(self.filename + "_" + plot_x + "_" + input_ + "_" + date)
         plt.close()
 
-    def analyze_data_Ta_Rh(self, data):
-        color = ["r", "#EB631B", "#1B86EB", "#58FF33", "#186A06"]
-        #color = [ "b", "#1B86EB", "#58FF33", "#EB631B", "r"]
-        output = [-2,-1,0,1,2]
+
+    def analyze_data_Ta_Rh(self, data, date="", marker="o"):
+        #https://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.htmlhttps://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.html
+        if(self.output == "Satisfaction"):
+            color_list = ["#800000", "r", "#ff8000", "#66ccff", "#33ff33", "#00cc00", "#006600"]
+            offset = 3
+        else:
+            color_list = [ "b", "#33ffff", "#3399ff", "#33ff66", "#ff8000", "#ff4000", "r"]
+            offset = 2
+        data["Date"] = data.index.date
+        output = [ -3, -2,-1, 0, 1, 2, 3]
         fig, ax = plt.subplots(figsize=(12,6))
         plot_x = "Temperature_0m"
         plot_y = "Humidity_0m"
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        #ax.set_ylim(-3.2, 3.2)
-        ax.set_ylabel("Relative Humidity (%)")
-        ax.set_xlabel('Air Temperature ($^\circ$C)')
-        #ax.set_xlim(18, 31.2)
+        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylabel("Relative Humidity (%)", fontsize=18)
+        ax.set_xlabel('Air Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        plt.xticks(np.arange(16, 31.2, 2.0))
-        for i in range(len(output)):
-            ax.scatter(data.loc[data[self.output] == output[i]][plot_x], 
-                data.loc[data[self.output] == output[i]][plot_y],
-             color = color[i], label= self.output + ":" + str(output[i]))
-      
-        plt.title(self.user)
-        legend = ax.legend(loc='upper left')     
-        plt.savefig(self.filename + "_" + plot_x + "_" + plot_y)
+        ax.set_xlim(air_low_limit, air_high_limit + offset)
+        plt.xticks(np.arange(17, air_high_limit, 1.0))
+        date_list = data["Date"].unique()
+        marker_list = ["o", "*", "p", "s", "d", "^"]
+
+        for j in range(len(date_list)):
+            for i in range(len(output)):
+                ax.scatter(data.loc[(data[self.output] == output[i]) & (data["Date"] == date_list[j])][plot_x], 
+                    data.loc[(data[self.output] == output[i]) & (data["Date"] == date_list[j])][plot_y],
+                 color = color_list[i], marker=marker_list[j])
+        plt.title(self.user + ", Clo:" + clo[self.user] + date + ", Counts:" + str(len(data.index)), fontsize=20)
+        #legend = ax.legend()
+        custom_legend = [Line2D([0], [0], marker= "+", color='#E5E8E8', 
+            markerfacecolor='#E5E8E8')] 
+        custom_legend = custom_legend + [Line2D([0], [0], marker= m, color='#E5E8E8', 
+         markerfacecolor='g', markersize="10") for m in marker_list]
+        lengend_list = ["     Outdoor:(Ta,Rh)"]
+        lengend_list = lengend_list + [str(date_list[i]) + ":" 
+            + str(self.outdoor[i]) for i in range(len(date_list))]
+        legend1 = plt.legend(custom_legend, lengend_list, loc='upper right',
+         fontsize=12)  
+
+        custom_legend = [Line2D([0], [0], marker= "o",  color='#E5E8E8', 
+         markerfacecolor = color, markersize="8") for color in color_list]
+        lengend_list = []
+        if self.output == "Satisfaction": 
+            lengend_list = ["Strongly Dissatisfied", "Dissatisfied", 
+            "Slightly Dissatisfied", "Neutral", "Slightly Satisfied", 
+            "Satisfied", "Strongly Satisfied"]
+        else: 
+            lengend_list = ["Cold", "Cool", 
+            "Slightly Cool", "Neutral", "Slightly Warm", 
+            "Warm", "Hot"]
+        plt.legend(custom_legend, lengend_list , loc='lower right',
+         fontsize=12) 
+        plt.gca().add_artist(legend1)
+        plt.tight_layout()
+        plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + date)
         plt.close()
   
 
 
-
     def combine_data(self):
         i = 0
+        outdoor_list = []
+        marker_list = ["o", "*", "p", "s", "d", "^"]
         for tag in self.tags:
+            date = tag[6:]
             vote_File = self.location + "voting-" + tag + ".csv"
             skin_File = self.location + "temp-" + tag + ".csv"
             air_File = self.location + "environment-" + tag + ".csv"
+            outdoor_File = self.location + "environment-outdoor-" + date + ".csv"
             if i == 0:
-                data = self.process_data_Air_Skin_Sensation(skin_File, air_File, vote_File)
-            else: 
-                data = data.append(self.process_data_Air_Skin_Sensation(skin_File, air_File, vote_File))
+                data, outdoor = self.process_data_Air_Skin_Sensation(skin_File, air_File, vote_File, outdoor_File)
+                #self.analyze_data_Ta_Rh(data, date, marker_list[i])
+            
+            else:
+                data_i, outdoor = self.process_data_Air_Skin_Sensation(skin_File, air_File, vote_File, outdoor_File)
+                #self.analyze_data_Ta_Rh(data_i, date, marker_list[i])
+                data = data.append(data_i)
+            outdoor_list.append(outdoor)
             i += 1
-        return data
+        return data, outdoor_list
 
 
 
-    def process_data_Air_Skin_Sensation(self, skin_File, air_File, vote_File):
+    def process_data_Air_Skin_Sensation(self, skin_File, air_File, vote_File, outdoor_File):
+        ####### process outdoor
+
+        data_outdoor = pd.read_csv(outdoor_File, names = ["Time", "Outdoor_Temperature", "Outdoor_Humidity"])
+        outdoor =  (data_outdoor.mean().round()["Outdoor_Temperature"], data_outdoor.mean().round()["Outdoor_Humidity"])
         ####### process voting
         ### don't do resmaple, since time interval could be different
         data_vote = pd.read_csv(vote_File, names = ["Time", "Sensation", "Satisfaction"])
         data_vote.index = pd.to_datetime(data_vote.Time)
+        data_vote.index = pd.DatetimeIndex(((data_vote.index.asi8/(1e9*60)).round()*1e9*60).astype(np.int64))
+        data_vote.Time = data_vote.index
+        data_vote = data_vote.drop_duplicates()
 
         ####### process skin temperature
         data_skin = pd.read_csv(skin_File, names = ["Time", "Skin"])
         data_skin.index = pd.to_datetime(data_skin.Time)
         data_skin = data_skin.resample('60s').mean()
-        data_skin_0 = pd.DataFrame(np.array([data_skin[(data_skin.index == t)].mean() 
+        data_skin_0 = pd.DataFrame(np.array([data_skin[(data_skin.index == t )].mean() 
             for t in data_vote.index]), columns = ["Skin_0m"], index = data_vote.index)
         data_skin_1 = pd.DataFrame(np.array([data_skin[(data_skin.index == t - dt.timedelta(minutes = 1))].mean() 
             for t in data_vote.index]), columns = ["Skin_1m"], index = data_vote.index)
@@ -926,7 +1190,9 @@ class subjectiveSimulator():
         data_air = pd.read_csv(air_File, names = ["Time", "Temperature", "Humidity"])
         data_air.index = pd.to_datetime(data_air.Time)
         # empty item filled with the value after it
-        data_air= data_air.resample('60s').mean().bfill()
+        data_air= data_air.resample('60s').mean()
+        #print(data_vote_skin)
+        #print(data_air.head(80).index)
         data_air_0 = pd.DataFrame(np.array([data_air[(data_air.index == t)].mean()
             for t in data_vote.index]), columns = ["Temperature_0m", "Humidity_0m"], index = data_vote.index)
         data_air_1 = pd.DataFrame(np.array([data_air[(data_air.index == t - dt.timedelta(minutes = 1))].mean()  
@@ -945,7 +1211,8 @@ class subjectiveSimulator():
         data_vote_skin_air = data_vote_skin_air.join(data_air_3)
         data_vote_skin_air = data_vote_skin_air.join(data_air_4)
         data_vote_skin_air = data_vote_skin_air.join(data_air_5)
-        return data_vote_skin_air.dropna()
+      
+        return data_vote_skin_air, outdoor
 
 
 
@@ -1024,13 +1291,29 @@ def process_data_Air_Sensation(Envir_File, vote_file):
 
 def main():
     inSampleTime = '2018-02-10 18:08:00'
-    ###### user3 ######
-    # combine all the files for user3 
-    location = "csv/user4/"
-    user = "user4"
-    tags = ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10"]
-    #tags = ["user2-2018-2-20", "user2-2018-2-25", "user2-2018-2-27", "user2-2018-3-2"]
-    #tags = ["user3-2018-2-19",  "user3-2018-3-2", "user3-2018-3-14"] #"user3-2018-2-27",
+    tags = {"user1" : ["user1-2018-2-20", "user1-2018-2-24", "user1-2018-3-2", "user1-2018-3-19"],
+    "user2": ["user2-2018-2-20", "user2-2018-2-25", "user2-2018-2-27", "user2-2018-3-2"], 
+    "user3": ["user3-2018-2-19", "user3-2018-2-27", "user3-2018-3-2", "user3-2018-3-14", "user3-2018-3-16", "user3-2018-3-17"],
+    "user4": ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-20"], 
+    "user5": ["user5-2018-3-4", "user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19", "user5-2018-3-20", "user5-2018-3-22"], 
+    "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21"]}
+
+    for i in range(1, 7):
+        user = "user" + str(i)
+        location = "csv/" + user + "/"
+        
+        skin_simulator = skinSimulator(user, tags[user], ["Air Temperature", "Relative Humidity"], "Skin Temperature")  
+        #skin_simulator.evaluation()
+
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user])
+        #sub_simulator.neural_network("adam")
+        #sub_simulator.evaluation("neural_network")
+
+        sub_simulator = subjectiveSimulator(user, "Sensation", tags[user])
+        # sub_simulator.neural_network("adam")
+        # sub_simulator.evaluation("neural_network")
+        
+    
     # env_File = [location + "action_16.csv",
     #             location + "environment-outdoor-2018-3-6.csv",
     #             location + "environment-user2-2018-3-6.csv",
@@ -1055,17 +1338,12 @@ def main():
     #     location + " envSimulator")
     # env_simulator = envSimulator(location, env_File, "user4 ", ["Previous Relative Humidity", "Previous Action", 
     #     "outdoor Previous Relative Humidity"],
-    #  "Relative Humidity", location + "envSimulator")
+    #   "Relative Humidity", location + "envSimulator")
     # env_simulator.evaluation()
     
     #env_simulator.SARIMAX_prediction()
 
-    # skin_simulator = skinSimulator(user, tags, ["Air Temperature", "Relative Humidity"], "Skin Temperature")
-    # skin_simulator.evaluation()
 
-    sub_simulator = subjectiveSimulator(user, "Satisfaction", tags)
-    sub_simulator.neural_network("adam")
-    sub_simulator.evaluation("neural_network")
 
 
 
