@@ -54,7 +54,7 @@ air_high_limit = 32
 humidity_low_limit = 12
 humidity_high_limit = 44
 clo = {"user1": "0.89", "user2":"1.01", "user3":"1.01", 
-"user4":"0.89", "user5":"1.01", "user6": "0.72"}
+"user4":"1.01", "user5":"1.01", "user6": "0.72"}
 
 # ref: http://www.statsmodels.org/dev/examples/notebooks/generated/statespace_sarimax_stata.html
 def plot_relationship(data, pngName, param1, param2):
@@ -611,6 +611,7 @@ class skinSimulator():
 
         ax.set(title="Testing Error: (Kernel:%f); (SVR:%f)" % (MSE_ker, MSE_SVR), 
             xlabel='Time', ylabel=self.output)
+        ax.tick_params(labelsize = 18)
         
 
         # ax2 = ax.twinx()
@@ -622,9 +623,9 @@ class skinSimulator():
         #plot regression line
         fig, ax = plt.subplots(figsize=(12,6))
         ax.set_xlim(air_low_limit, air_high_limit)
-        ax.set_xlabel('Air Temperature($^\circ$C)')
+        ax.set_xlabel('Air Temperature($^\circ$C)', fontsize=18)
         ax.set_ylim(skin_low_limit, skin_high_limit)
-        ax.set_ylabel('Skin Temperature($^\circ$C)')
+        ax.set_ylabel('Skin Temperature($^\circ$C)', fontsize=18)
         # ax.tick_params('y', colors='r')
         # ax.tick_params('x', colors='g')
         ax.plot(self.data[self.input_list[0]],self.data[self.output],
@@ -635,7 +636,8 @@ class skinSimulator():
         ax.plot(self.data[self.input_list[0]] ,
             SVR_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
             "g.", label='SVR') 
-        plt.title(self.user)
+        ax.tick_params(labelsize = 18)
+        plt.title(self.user, fontsize=20)
         legend = ax.legend(loc='lower right') 
         plt.tight_layout()   
         plt.savefig(self.filename + "_" + self.output + "_relation")
@@ -658,6 +660,7 @@ class skinSimulator():
         ax.set_xlabel('Air Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlim(air_low_limit, air_high_limit + 3)
+        ax.tick_params(labelsize = 18)
         plt.xticks(np.arange(17, air_high_limit, 1.0))
         date_list = data["Date"].unique()
         marker_list = ["o", "*", "p", "s", "d", "^"]
@@ -811,20 +814,31 @@ class subjectiveSimulator():
             self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
             self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
             self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
+            self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
+            self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
+            self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
+            self.analze_data_violin(data_with_nan, "Skin_3m", 0, 0.7)
         else:
             self.analyze_data_scatter_h(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
             self.analyze_data_scatter_h(data_with_nan, "Skin_" , skin_low_limit, skin_high_limit)
+            self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
+            self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
+            self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
+            self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
+            self.analze_data_violin(data_with_nan, "Skin_3m", 0, 1.0)
 
         ## to get last 5-minutes data will get more nan
         self.data = data_with_nan.dropna()
-        self.analyze_data_delta(self.data, 3, "Temperature_")
-        self.analyze_data_delta(self.data, 3, "Skin_")
+        self.analyze_data_delta(self.data, 5, "Temperature_")
+        self.analyze_data_delta(self.data, 5, "Skin_")
        
         self.X = self.data.ix[:, ["Skin_0m", "Temperature_0m", "Humidity_0m",
               "Skin_5m", "Temperature_5m", "Humidity_5m"]].as_matrix()
+        #self.X = self.data.ix[:, ["Skin_0m"]].as_matrix().reshape(-1, 1)
         self.Y = np.array(self.data[output].as_matrix()).reshape(-1, 1)
         self.pred_Y = None
         self.loss_and_metrics  = None
+        self.test_X = None
 
 
     def neural_network(self, optimizer):
@@ -843,7 +857,8 @@ class subjectiveSimulator():
         # convert integers to dummy variables (i.e. one hot encoded)
         dummy_y = np_utils.to_categorical(encoded_Y)
         lable_num = dummy_y.shape[1]
-
+        train_X, self.test_X, train_Y, test_Y = train_test_split(
+            X_scaled, dummy_y, test_size=0.3, random_state=42)
         model = Sequential()
         model.add(Dense(6, input_dim=6, activation='relu'))
         model.add(Dense(12, activation='relu'))
@@ -853,9 +868,9 @@ class subjectiveSimulator():
                   optimizer=optimizer, 
                   metrics=['accuracy'])
         
-        model.fit(X_scaled, dummy_y, epochs=200, batch_size=1, verbose=0)
+        model.fit(train_X, train_Y, epochs=200, batch_size=1, verbose=0)
         model.save_weights(self.location + "subjective/" + self.user + "_"  + self.output + "_ANN.h5")
-        self.loss_and_metrics = model.evaluate(X_scaled, dummy_y, batch_size=1)
+        self.loss_and_metrics = model.evaluate(self.test_X,  test_Y, batch_size=1)
         classes = model.predict(X_scaled, batch_size=1)
         self.pred_Y = [np.argmax(values) + min(self.Y.flatten()) for values in classes]
         print(min(self.Y.flatten()))
@@ -872,52 +887,55 @@ class subjectiveSimulator():
 
         # Plot predictions with time
         pd.DataFrame({"prediction": self.pred_Y}).plot(ax=ax, style='r.') 
-        legend = ax.legend(loc='lower right')    
+        legend = ax.legend(loc='lower right')  
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(-3.2, 3.2)                                                
+        ax.set_ylim(-3.2, 3.2)       
+        ax.tick_params(labelsize = 18)                                         
         plt.savefig(self.filename + "_" + method_name)
         plt.close()
+
         fig, ax = plt.subplots(figsize=(12,6))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(-3.2, 3.2)
-        ax.set_ylabel('Thermal ' + self.output)
-        ax.set_xlabel('Skin Temperature past 5 minutes gradiant($^\circ$C)')
-        ax.plot(self.data["Skin_0m"] - self.data["Skin_4m"], self.data[self.output],
+        ax.set_xlim(-3.2, 3.2)
+        ax.set_xlabel('Thermal ' + self.output)
+        ax.set_ylabel('Skin Temperature 3m Absolute Gradiant($^\circ$C)')
+        ax.plot(self.data[self.output], self.data["Skin_0m"].subtract(self.data["Skin_3m"]).abs(),
          "b.", markersize=10, label='Observation')
-        ax.plot(self.data["Skin_0m"] - self.data["Skin_4m"], self.pred_Y,
+        ax.plot(self.pred_Y, self.data["Skin_0m"].subtract(self.data["Skin_3m"]).abs(), 
          "r.", label='prediction')
   
         plt.title(method_name + ":(categorical_crossentropy:%f; accuracy:%f;)" % (self.loss_and_metrics[0],
          self.loss_and_metrics[1]))
+        ax.tick_params(labelsize = 18)
         legend = ax.legend(loc='lower right')     
         plt.savefig(self.filename  + "_Delta_" + method_name )
         plt.close()
 
-        self.data["Prediction"] = self.pred_Y
-        if(self.output == "Satisfaction"):
-            color = ["r", "#EB631B", "#1B86EB", "#58FF33", "#186A06"]
-        else:
-            color = [ "b", "#1B86EB", "#58FF33", "#EB631B", "r"]
-        output = [-2,-1,0,1,2]
-        fig, ax = plt.subplots(figsize=(12,6))
-        plot_x = "Temperature_0m"
-        plot_y = "Humidity_0m"
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        #ax.set_ylim(-3.2, 3.2)
-        ax.set_ylabel("Relative Humidity (%)")
-        ax.set_xlabel('Air Temperature ($^\circ$C)')
-        #ax.set_xlim(18, 31.2)
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        plt.xticks(np.arange(16, air_high_limit + 1, 2.0))
-        for i in range(len(output)):
-            ax.scatter(self.data.loc[self.data["Prediction"] == output[i]][plot_x], 
-                self.data.loc[self.data["Prediction"] == output[i]][plot_y],
-             color = color[i], label= self.output + ":" + str(output[i]))
-        plt.title(self.user + "_prediction")
-        legend = ax.legend(loc='upper left')   
-        plt.tight_layout()  
-        plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + method_name)
-        plt.close()   
+        # self.data["Prediction"] = self.pred_Y
+        # if(self.output == "Satisfaction"):
+        #     color = ["r", "#EB631B", "#1B86EB", "#58FF33", "#186A06"]
+        # else:
+        #     color = [ "b", "#1B86EB", "#58FF33", "#EB631B", "r"]
+        # output = [-2,-1,0,1,2]
+        # fig, ax = plt.subplots(figsize=(12,6))
+        # plot_x = "Temperature_0m"
+        # plot_y = "Humidity_0m"
+        # ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        # #ax.set_ylim(-3.2, 3.2)
+        # ax.set_ylabel("Relative Humidity (%)")
+        # ax.set_xlabel('Air Temperature ($^\circ$C)')
+        # #ax.set_xlim(18, 31.2)
+        # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        # plt.xticks(np.arange(16, air_high_limit + 1, 2.0))
+        # for i in range(len(output)):
+        #     ax.scatter(self.data.loc[self.data["Prediction"] == output[i]][plot_x], 
+        #         self.data.loc[self.data["Prediction"] == output[i]][plot_y],
+        #      color = color[i], label= self.output + ":" + str(output[i]))
+        # plt.title(self.user + "_prediction")
+        # legend = ax.legend(loc='upper left')   
+        # plt.tight_layout()  
+        # plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + method_name)
+        # plt.close()   
 
 
     def mean_confidence_interval(self, data, confidence=0.95):
@@ -931,15 +949,32 @@ class subjectiveSimulator():
     def analze_data_violin(self, data, input_, limit_low, limit_high):
         output = [ -3, -2,-1, 0, 1, 2, 3]
         fig, ax = plt.subplots(figsize=(12,6))
-        plot_x = input_
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlim(0, 8)
         ax.set_xlabel('Thermal ' + self.output, fontsize=18)
         if input_ == "Temperature_0m": 
-            text = "Air"
+            plot_x = input_
+            text = "Air Temperature 1m Average($^\circ$C)"
         elif input_ == "Skin_0m":
-            text = "Skin"
-        ax.set_ylabel(text + ' Temperature 1 Minutes Average($^\circ$C)' ,fontsize=18)
+            text = "Skin Temperature 1m Average($^\circ$C)"
+            plot_x = input_
+        elif input_ == "Temperature_5m": # show absolute delta
+            text = "Air Temperature 5m Absolute Gradient($^\circ$C)"
+            data["Delta"] = data["Temperature_0m"].subtract(data["Temperature_5m"]).abs()
+            plot_x = "Delta"
+        elif input_ == "Skin_5m": # show absolute delta
+            text = "Skin Temperature 5m Absolute Gradient($^\circ$C)"
+            data["Delta"] = data["Skin_0m"].subtract(data["Skin_5m"]).abs()
+            plot_x = "Delta"
+        elif input_ == "Temperature_3m": # show absolute delta
+            text = "Air Temperature 3m Absolute Gradient($^\circ$C)"
+            data["Delta"] = data["Temperature_0m"].subtract(data["Temperature_3m"]).abs()
+            plot_x = "Delta"
+        elif input_ == "Skin_3m": # show absolute delta
+            text = "Skin Temperature 3m Absolute Gradient($^\circ$C)"
+            data["Delta"] = data["Skin_0m"].subtract(data["Skin_3m"]).abs()
+            plot_x = "Delta"
+        ax.set_ylabel(text ,fontsize=18)
         ax.set_ylim(limit_low, limit_high)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         #plt.xticks(np.arange(26, 36.2, 1.0))
@@ -948,7 +983,7 @@ class subjectiveSimulator():
         mean = []
         errors = []
         for xlabel in output:
-            data_x = data.dropna().loc[data.dropna()["Sensation"] == xlabel][plot_x].tolist()
+            data_x = data.dropna().loc[data.dropna()[self.output] == xlabel][plot_x].tolist()
             m, h =  self.mean_confidence_interval(data_x)
             mean.append(m)
             errors.append(h)
@@ -961,7 +996,7 @@ class subjectiveSimulator():
         ax.violinplot(all_data,
            showmeans=False,
            showmedians=True)
-        ax.plot(range(1, 8), median, color="r")
+        ax.plot(range(1, 8), mean, color="r")
         #ax.plot(range(1, 8), mean, color="b")
         plt.errorbar(range(1, 8), mean, yerr=errors, fmt = 'o', color = 'g')
 
@@ -973,11 +1008,34 @@ class subjectiveSimulator():
         custom_legend = [Line2D([0], [0], marker= "o",  color='g', 
              markerfacecolor = 'g', markersize="6"),
              Line2D([0], [0],  color='r') ]
-        lengend_list = ["Mean and 0.95 Confidence Interval", "Median Line"]
+        lengend_list = ["Mean and 0.95 Confidence Interval", "The trend of Mean Skin"]
         plt.legend(custom_legend, lengend_list , loc='upper left', fontsize=14)   
         plt.tight_layout()
         #legend = ax.legend(loc='lower right')     
-        plt.savefig(self.filename + "_" + plot_x + "_violin")
+        plt.savefig(self.filename + "_" + input_ + "_violin")
+        plt.close()
+
+
+    def analyze_data_delta(self, data, interval, input_, date=""):
+        data["Delta"] = data[input_+"0m"].subtract(data[input_ + str(interval) + "m"]).abs()
+        output = [-3, -2,-1, 0, 1, 2, 3]
+        fig, ax = plt.subplots(figsize=(12,6))
+        plot_x = "Delta"
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_ylim(-3.2, 3.2)
+        ax.set_ylabel('Thermal ' + self.output,  fontsize=18)
+        if input_ == "Temperature_": 
+                text = "Air"
+        elif input_ == "Skin_":
+            text = "Skin"
+        ax.set_xlabel(text + ' Temperature past '+ str(interval) + ' minutes gradiant($^\circ$C)', fontsize=18)
+        correlation = pearsonr(data[plot_x], data[self.output])
+        ax.plot(data[plot_x], data[self.output],
+         "b.", label='Observed')
+        ax.tick_params(labelsize = 18)
+        plt.title(self.user + "_" + date + ": " + str(round(correlation[0], 2)), fontsize=20)  
+        plt.tight_layout()  
+        plt.savefig(self.filename + "_" + plot_x + "_" + input_ + "_" + str(interval) + "m" +  date)
         plt.close()
 
 
@@ -1001,6 +1059,7 @@ class subjectiveSimulator():
 
             ax.plot(data["Sensation"], data[plot_x], 
              "b.", markersize="9", label='Observed')
+            ax.tick_params(labelsize = 18)
             plt.title(self.user + ", Clo:" + clo[self.user] + ", Correlation: " + str(round(correlation[0], 2)), fontsize=20)   
             plt.tight_layout() 
             plt.savefig(self.filename + "_" + plot_x)
@@ -1036,34 +1095,13 @@ class subjectiveSimulator():
             lengend_list = ["Cold", "Cool", 
             "Slightly Cool", "Neutral", "Slightly Warm", 
             "Warm", "Hot"]
-            plt.legend(custom_legend, lengend_list , loc='upper right',
+            ax.tick_params(labelsize = 18)
+            plt.legend(custom_legend, lengend_list , loc='upper left',
              fontsize=12)   
             plt.tight_layout()
             plt.savefig(self.filename + "_" + plot_x)
             plt.close()
 
-
-    def analyze_data_delta(self, data, interval, input_, date=""):
-        data["Delta"] = data[input_+"0m"] - data[input_ + str(interval) + "m"]
-        output = [-3, -2,-1, 0, 1, 2, 3]
-        fig, ax = plt.subplots(figsize=(12,6))
-        plot_x = "Delta"
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(-3.2, 3.2)
-        ax.set_ylabel('Thermal ' + self.output,  fontsize=18)
-        if input_ == "Temperature_": 
-                text = "Air"
-        elif input_ == "Skin_":
-            text = "Skin"
-        ax.set_xlabel(text + ' Temperature past '+ str(interval) + ' minutes gradiant($^\circ$C)', fontsize=18)
-        correlation = pearsonr(data[plot_x], data[self.output])
-        ax.plot(data[plot_x], data[self.output],
-         "b.", label='Observed')
-  
-        plt.title(self.user + "_" + date + ": " + str(round(correlation[0], 2)), fontsize=20)  
-        plt.tight_layout()  
-        plt.savefig(self.filename + "_" + plot_x + "_" + input_ + "_" + date)
-        plt.close()
 
 
     def analyze_data_Ta_Rh(self, data, date="", marker="o"):
@@ -1072,7 +1110,7 @@ class subjectiveSimulator():
             color_list = ["#800000", "r", "#ff8000", "#66ccff", "#33ff33", "#00cc00", "#006600"]
             offset = 3
         else:
-            color_list = [ "b", "#33ffff", "#3399ff", "#33ff66", "#ff8000", "#ff4000", "r"]
+            color_list = [ "b", "#33ffff", "#3399ff", "#33ff66", "#ff8000", "#ff4000", "#800000"]
             offset = 2
         data["Date"] = data.index.date
         output = [ -3, -2,-1, 0, 1, 2, 3]
@@ -1117,6 +1155,7 @@ class subjectiveSimulator():
             lengend_list = ["Cold", "Cool", 
             "Slightly Cool", "Neutral", "Slightly Warm", 
             "Warm", "Hot"]
+        ax.tick_params(labelsize = 18)
         plt.legend(custom_legend, lengend_list , loc='lower right',
          fontsize=12) 
         plt.gca().add_artist(legend1)
@@ -1306,8 +1345,8 @@ def main():
         #skin_simulator.evaluation()
 
         sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user])
-        #sub_simulator.neural_network("adam")
-        #sub_simulator.evaluation("neural_network")
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")
 
         sub_simulator = subjectiveSimulator(user, "Sensation", tags[user])
         # sub_simulator.neural_network("adam")
