@@ -51,10 +51,10 @@ skin_low_limit = 25
 skin_high_limit = 37
 air_low_limit = 16.5
 air_high_limit = 32
-humidity_low_limit = 12
+humidity_low_limit = 9
 humidity_high_limit = 44
-clo = {"user1": "0.89", "user2":"1.01", "user3":"1.01", 
-"user4":"1.01", "user5":"1.01", "user6": "0.72"}
+clo = {"user1": "1.0", "user2":"1.0", "user3":"1.0", 
+"user4":"1.0", "user5":"1.0", "user6": "0.72"}
 
 # ref: http://www.statsmodels.org/dev/examples/notebooks/generated/statespace_sarimax_stata.html
 def plot_relationship(data, pngName, param1, param2):
@@ -500,27 +500,42 @@ class skinSimulator():
         filename: str, specify the model name and png name that will be saved 
 
     """
-    def __init__(self, user, tags, input_list, output): 
+    def __init__(self, user, tags, input_list, output, simulation = False): 
         self.user = user
         self.location = "csv/" + user + "/"
         self.tags = tags
+        self.output = output
+        self.input_list = input_list
+        self.simulation = simulation
         self.filename = self.location + "skin/" + "Skin_" + user
         self.data, self.outdoor = self.combine_data()
-        self.analyze_data_Ta_Rh(self.data)
+        if self.simulation == False:
+            self.analyze_data_Ta_Rh(self.data)
         self.X = self.data[input_list]
         scalerX = MinMaxScaler()
         scalerX.fit(self.X)
         self.X = scalerX.transform(self.X)
+        self.X_max = scalerX.data_max_
+        self.X_min = scalerX.data_min_
         self.Y = self.data['Skin Temperature'].as_matrix().reshape(-1, 1)
         scalerY = MinMaxScaler()
         scalerY.fit(self.Y)
         self.Y= scalerY.transform(self.Y)
         self.Y_max = scalerY.data_max_
         self.Y_min = scalerY.data_min_
+        
         self.train_X, self.test_X, self.train_Y, self.test_Y = train_test_split(
-            self.X, self.Y, test_size=0.4, random_state=42)
-        self.output = output
-        self.input_list = input_list
+            self.X, self.Y, test_size=0.3, random_state=42)
+        if self.simulation == True: 
+            self.simulatedData = {
+            "Ta": np.random.choice(np.arange(self.X_min[0], self.X_max[0], 0.5), 400),
+            "Rh": np.random.choice(np.arange(self.X_min[1], self.X_max[1], 0.5), 400),
+            }
+            self.simulatedDf = pd.DataFrame(self.simulatedData).ix[:,["Ta", "Rh"]]
+            self.simulatedX = self.simulatedDf.as_matrix()
+            scalerX.fit(self.simulatedX)
+            self.test_X = scalerX.transform(self.simulatedX)
+
 
     def KernelRidgeRegression(self):
         """
@@ -549,10 +564,15 @@ class skinSimulator():
     def SVR(self):
         # Fit regression model
         clf = SVR(kernel='rbf', gamma=1.0)
-        model = clf.fit(self.train_X, self.train_Y)
-        # save the model to disk
-        modelname = self.filename + "_" + self.output + '_SVR.sav'
-        pickle.dump(model, open(modelname, 'wb'))
+        if self.simulation == False:
+            model = clf.fit(self.train_X, self.train_Y)
+            # save the model to disk
+            modelname = self.filename + "_" + self.output + '_SVR.sav'
+            pickle.dump(model, open(modelname, 'wb'))
+        else:
+            # load model from disk
+            model = pickle.load(open(self.filename + "_Skin Temperature_SVR.sav", 'rb'))
+
         pred_train_Y = model.predict(self.train_X)
         pred_test_Y = model.predict(self.test_X)
         pred_Y = model.predict(self.X)
@@ -584,41 +604,48 @@ class skinSimulator():
 
     def evaluation(self):
         #Graph
-        fig, ax = plt.subplots(figsize=(12,8))
+        if self.simulation == False:
+            fig, ax = plt.subplots(figsize=(12,8))
 
-        # Plot observed data points
-        pd.DataFrame({"Observation":self.data[self.output].tolist()}, 
-            index = range(0, len(self.data.index)*5, 5)).plot(ax=ax, 
-           style='k.', label='Observed')
+            # Plot observed data points
+            pd.DataFrame({"Observation":self.data[self.output].tolist()}, 
+                index = range(0, len(self.data.index)*5, 5)).plot(ax=ax, 
+               style='k', label='Observed')
 
-        # SVR 
-        (SVR_train_test_Y, SVR_pred_test_Y, SVR_pred_Y) = self.SVR()
-        MSE_SVR = mean_squared_error(self.test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min,
-         SVR_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min)
+            # SVR 
+            (SVR_train_test_Y, SVR_pred_test_Y, SVR_pred_Y) = self.SVR()
+            MSE_SVR = mean_squared_error(self.test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min,
+             SVR_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min)
 
-        pd.DataFrame({"SVR": SVR_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min}, 
-            index = range(0, len(self.data.index)*5, 5)).plot(ax=ax, style='b')  
+            pd.DataFrame({"SVR": SVR_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min}, 
+                index = range(0, len(SVR_pred_Y.flatten())*5, 5)).plot(ax=ax, style='g')  
 
-        # Kernel
-        (kernel_train_test_Y, kernel_pred_test_Y, kernel_pred_Y) = self.KernelRidgeRegression()
-        # calculat MSE only based on test data
-        MSE_ker = mean_squared_error(self.test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
-            kernel_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min)
+            # Kernel
+            (kernel_train_test_Y, kernel_pred_test_Y, kernel_pred_Y) = self.KernelRidgeRegression()
+            # calculat MSE only based on test data
+            MSE_ker = mean_squared_error(self.test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
+                kernel_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min)
 
 
-        pd.DataFrame({"kernel": kernel_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min},
-            index = range(0, len(self.data.index)*5, 5)).plot(ax=ax, style='r') 
+            pd.DataFrame({"kernel": kernel_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min},
+                index = range(0, len(kernel_pred_Y.flatten())*5, 5)).plot(ax=ax, style='r') 
 
-        ax.set(title="Testing Error: (Kernel:%f); (SVR:%f)" % (MSE_ker, MSE_SVR), 
-            xlabel='Time', ylabel=self.output)
-        ax.tick_params(labelsize = 18)
-        
+            plt.title("Testing Error: (Kernel:%f); (SVR:%f)" % (MSE_ker, MSE_SVR), fontsize=20)
+            ax.set_xlabel('Minutes', fontsize=18)
+            ax.set_ylabel('Skin Temperature ($^\circ$C)', fontsize=18)
+            ax.tick_params(labelsize = 18)
+            
 
-        # ax2 = ax.twinx()
-        # data_m['Action'].plot(ax=ax2, style='g', label='Action')
-        legend = ax.legend(loc='upper right')                                                         
-        plt.savefig(self.filename + "_" + self.output + "_ALL")
-        plt.close()
+            # ax2 = ax.twinx()
+            # data_m['Action'].plot(ax=ax2, style='g', label='Action')
+            legend = ax.legend(loc='upper right') 
+            plt.tight_layout()                                                        
+            plt.savefig(self.filename + "_" + self.output + "_ALL")
+            plt.close()
+        else:
+            (SVR_train_test_Y, SVR_pred_test_Y, SVR_pred_Y) = self.SVR()
+            MSE_SVR = mean_squared_error(self.test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min,
+             SVR_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min)
 
         #plot regression line
         fig, ax = plt.subplots(figsize=(12,6))
@@ -628,21 +655,72 @@ class skinSimulator():
         ax.set_ylabel('Skin Temperature($^\circ$C)', fontsize=18)
         # ax.tick_params('y', colors='r')
         # ax.tick_params('x', colors='g')
-        ax.plot(self.data[self.input_list[0]],self.data[self.output],
-         "k.", label='Observed')
-        ax.plot(self.data[self.input_list[0]] ,
-            kernel_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
-            "r.", label='Kernel') 
-        ax.plot(self.data[self.input_list[0]] ,
-            SVR_pred_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
+        XX = self.test_X[:,0]*(self.X_max[0] - self.X_min[0]) + self.X_min[0]
+
+        if self.simulation == False:
+            ax.plot(XX,self.test_Y*(self.Y_max - self.Y_min) + self.Y_min,
+                "k.", label='Observed')
+            ax.plot(XX,
+                kernel_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
+                "r.", label='Kernel') 
+        ax.plot(XX,
+            SVR_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min, 
             "g.", label='SVR') 
         ax.tick_params(labelsize = 18)
         plt.title(self.user, fontsize=20)
         legend = ax.legend(loc='lower right') 
         plt.tight_layout()   
-        plt.savefig(self.filename + "_" + self.output + "_relation")
+        if self.simulation == False:
+            plt.savefig(self.filename + "_" + self.output + "_relation")
+        else:
+            plt.savefig(self.filename + "_" + self.output + "_relation_simulation") 
+        plt.close()
+
+        test_X = self.test_X*(self.X_max - self.X_min) + self.X_min
+        test_df = pd.DataFrame(test_X, columns = ["Air Temperature", "Relative Humidity"])
+        test_df["Skin Temperature"] = SVR_pred_test_Y.flatten()*(self.Y_max - self.Y_min) + self.Y_min
+        color_list = [  "b", "#02B2FF", "#02FFFF", "#28FF02", "y", "#FF9402", "#FF5602", "r", "#800000"]
+        output_H = range(28, 37, 1)
+        output_L = range(27, 36, 1)
+        fig, ax = plt.subplots(figsize=(12,6))
+        plot_x = "Air Temperature"
+        plot_y = "Relative Humidity"
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylabel("Relative Humidity (%)", fontsize=18)
+        ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax.set_xlim(air_low_limit, air_high_limit + 3)
+        ax.tick_params(labelsize = 18)
+        plt.xticks(np.arange(17, air_high_limit, 1.0))
+
+        for i in range(len(output_H)):
+            ax.scatter(test_df.loc[(test_df["Skin Temperature"] > output_L[i]) & (test_df["Skin Temperature"] <= output_H[i])][plot_x], 
+                test_df.loc[(test_df["Skin Temperature"] > output_L[i]) & (test_df["Skin Temperature"] <= output_H[i])][plot_y],
+             color = color_list[i])
+        if self.simulation == True:
+            plt.title(self.user + " Predicted Skin Temperature with Random Generated Data" ,fontsize=20)
+        else:
+            plt.title("Testing Error: (SVR:%1.2f)" % (MSE_SVR), fontsize=20)
+
+        custom_legend = [Line2D([0], [0], marker= "o",  color='#E5E8E8', 
+         markerfacecolor = color, markersize="8") for color in color_list]
+        lengend_list = []
+        lengend_list = ["27$^\circ$C < Skin <= 28$^\circ$C", "28$^\circ$C < Skin <= 29$^\circ$C", 
+        "29$^\circ$C < Skin <= 30$^\circ$C", "30$^\circ$C < Skin <= 31$^\circ$C", 
+        "31$^\circ$C < Skin <= 32$^\circ$C", "32$^\circ$C < Skin <= 33$^\circ$C",
+        "33$^\circ$C < Skin <= 34$^\circ$C", "34$^\circ$C < Skin <= 35$^\circ$C",
+        "35$^\circ$C < Skin <= 36$^\circ$C"]
+        plt.legend(custom_legend, lengend_list , loc='lower right',
+         fontsize=12) 
+        plt.tight_layout()
+        if self.simulation == True:
+            plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_SVR_simulation")
+        else:
+            plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_SVR")
         plt.close()
         return    
+
 
     def analyze_data_Ta_Rh(self, data):
         #https://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.html
@@ -657,13 +735,13 @@ class skinSimulator():
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_ylim(humidity_low_limit, humidity_high_limit)
         ax.set_ylabel("Relative Humidity (%)", fontsize=18)
-        ax.set_xlabel('Air Temperature ($^\circ$C)', fontsize=18)
+        ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlim(air_low_limit, air_high_limit + 3)
         ax.tick_params(labelsize = 18)
         plt.xticks(np.arange(17, air_high_limit, 1.0))
         date_list = data["Date"].unique()
-        marker_list = ["o", "*", "p", "s", "d", "^"]
+        marker_list = ["o", "*", "p", ">", "<", "d", "^", ]
 
         for j in range(len(date_list)):
             for i in range(len(output_H)):
@@ -679,7 +757,7 @@ class skinSimulator():
             markerfacecolor='#E5E8E8')] 
         custom_legend = custom_legend + [Line2D([0], [0], marker = m, color='#E5E8E8', 
          markerfacecolor='g', markersize="10") for m in marker_list]
-        lengend_list = ["     Outdoor:(Ta,Rh)"]
+        lengend_list = [" Outdoor:(Ta$^\circ$C, Rh%)"]
         lengend_list = lengend_list + [str(date_list[i]) + ":" 
             + str(self.outdoor[i]) for i in range(len(date_list))]
         legend1 = plt.legend(custom_legend, lengend_list, loc='upper right',
@@ -749,7 +827,7 @@ class skinSimulator():
         ####### process skin temperature
         data_skin = pd.read_csv(skin_File, names = ["Time", "Skin Temperature"])
         data_skin.index = pd.to_datetime(data_skin.Time)
-        data_skin = data_skin.resample('30s', closed="right").mean()
+        data_skin = data_skin.resample('60s').mean()
 
         # ####### process air temperature and relative humidity
         data_air = pd.read_csv(air_File, names = ["Time", "Air Temperature", "Relative Humidity"])
@@ -762,7 +840,7 @@ class skinSimulator():
         # data_air["Second"][indices] = data_air["Second"][indices] - 30  
         # data_air = data_air.pivot(columns='Second')
         # data_air = data_air.resample('30s').mean().dropna()
-        data_air = data_air.resample('30s').mean().bfill()
+        data_air = data_air.resample('60s').mean().bfill()
         ###### Merge Skin and Environmental Data and drop wrong data
         training_set = pd.merge(data_skin, data_air, how='inner', left_index=True, right_index=True)
         #print(training_set)
@@ -801,141 +879,175 @@ class subjectiveSimulator():
         filename: str, specify the model name and png name that will be saved 
 
     """
-    def __init__(self, user, output, tags): 
+    def __init__(self, user, output, tags, simulation = False): 
+        self.simulation = simulation
         self.location = "csv/" + user + "/"
         self.tags = tags
         self.user  = user
         self.filename = self.location + "subjective/" + output + "_" + user
         self.output = output
         data_with_nan, self.outdoor = self.combine_data()
-        self.analyze_data_Ta_Rh(data_with_nan)
-        if self.output == "Sensation":
-            self.analyze_data_scatter(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
-            self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
-            self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
-            self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
-            self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
-            self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
-            self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
-            self.analze_data_violin(data_with_nan, "Skin_3m", 0, 0.7)
-        else:
-            self.analyze_data_scatter_h(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
-            self.analyze_data_scatter_h(data_with_nan, "Skin_" , skin_low_limit, skin_high_limit)
-            self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
-            self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
-            self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
-            self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
-            self.analze_data_violin(data_with_nan, "Skin_3m", 0, 1.0)
+        if self.simulation == False:
+            self.analyze_data_Ta_Rh(data_with_nan)
+            if self.output == "Sensation":
+                self.analyze_data_scatter(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
+                self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
+                self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
+                self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
+                self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
+                self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
+                self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
+                self.analze_data_violin(data_with_nan, "Skin_3m", 0, 0.7)
+            else:
+                self.analyze_data_scatter_h(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
+                self.analyze_data_scatter_h(data_with_nan, "Skin_" , skin_low_limit, skin_high_limit)
+                self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
+                self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
+                self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
+                self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
+                self.analze_data_violin(data_with_nan, "Skin_3m", 0, 1.0)
 
         ## to get last 5-minutes data will get more nan
         self.data = data_with_nan.dropna()
-        self.analyze_data_delta(self.data, 5, "Temperature_")
-        self.analyze_data_delta(self.data, 5, "Skin_")
-       
-        self.X = self.data.ix[:, ["Skin_0m", "Temperature_0m", "Humidity_0m",
-              "Skin_5m", "Temperature_5m", "Humidity_5m"]].as_matrix()
+        if self.simulation == False:
+            self.analyze_data_delta(self.data, 5, "Temperature_")
+            self.analyze_data_delta(self.data, 5, "Skin_")
+        self.input = ["Skin_0m", "Temperature_0m", "Humidity_0m", "Out_Temperature_0m", "Out_Humidity_0m"]
+        self.X = self.data.ix[:, self.input].as_matrix()
         #self.X = self.data.ix[:, ["Skin_0m"]].as_matrix().reshape(-1, 1)
         self.Y = np.array(self.data[output].as_matrix()).reshape(-1, 1)
-        self.pred_Y = None
-        self.loss_and_metrics  = None
-        self.test_X = None
-
-
-    def neural_network(self, optimizer):
-        # ref:https://machinelearningmastery.com/regression-tutorial-keras-deep-learning-library-python/ 
-        ## optimizer options: adam, sgd
         seed(1)
         scalerX = MinMaxScaler()
         scalerX.fit(self.X)
         X_scaled = scalerX.transform(self.X)
-        print(scalerX.data_max_)
-        print(scalerX.data_min_)
+        self.Xmax = scalerX.data_max_
+        self.Xmin = scalerX.data_min_
         # encode class values as integers
         encoder = LabelEncoder()
         encoder.fit(self.Y)
         encoded_Y = encoder.transform(self.Y)
         # convert integers to dummy variables (i.e. one hot encoded)
         dummy_y = np_utils.to_categorical(encoded_Y)
-        lable_num = dummy_y.shape[1]
-        train_X, self.test_X, train_Y, test_Y = train_test_split(
-            X_scaled, dummy_y, test_size=0.3, random_state=42)
+        self.lable_num = dummy_y.shape[1]
+        if self.simulation == False:
+            self.train_X, self.test_X, self.train_Y, self.test_Y = train_test_split(
+                X_scaled, dummy_y, test_size=0.3, random_state=42)
+        else:
+            model = pickle.load(open(self.location + "skin/Skin_" + self.user + "_Skin Temperature_SVR.sav", 'rb'))
+            Ta = np.random.choice(np.arange(self.Xmin[1], self.Xmax[1], 0.5), 400)
+            Rh = np.random.choice(np.arange(16, 18, 0.5), 400)
+            self.simulatedData1 = {
+            "Ta": Ta,
+            "Rh": Rh,
+            }
+            self.simulatedDf1 = pd.DataFrame(self.simulatedData1).ix[:,["Ta", "Rh"]]
+            self.simulatedX1= self.simulatedDf1.as_matrix()
+            scalerX.fit(self.simulatedX1)
+            self.test_X1 = scalerX.transform(self.simulatedX1)
+            skin = model.predict(self.test_X1).flatten()*(self.Xmax[0] - self.Xmin[0]) + self.Xmin[0]
+            self.simulatedData = {
+            "Skin": skin,
+            "Ta": Ta,
+            "Rh": Rh,
+            "Out_Ta": np.random.choice(np.arange(6,8, 0.5), 400),
+            "Out_Rh": np.random.choice(np.arange(33,35, 0.5), 400)
+            }
+            self.simulatedDf = pd.DataFrame(self.simulatedData).ix[:,["Skin", "Ta", "Rh", "Out_Ta", "Out_Rh"]]
+            self.simulatedX = self.simulatedDf.as_matrix()
+            scalerX.fit(self.simulatedX)
+            self.test_X = scalerX.transform(self.simulatedX)
+    
+        self.pred_Y = None
+        self.loss_and_metrics  = None
+
+
+    def neural_network(self, optimizer):
+        # ref:https://machinelearningmastery.com/regression-tutorial-keras-deep-learning-library-python/ 
+        ## optimizer options: adam, sgd
+        
         model = Sequential()
-        model.add(Dense(6, input_dim=6, activation='relu'))
-        model.add(Dense(12, activation='relu'))
-        model.add(Dense(lable_num, activation='softmax'))
+        model.add(Dense(len(self.input), input_dim=len(self.input), activation='relu'))
+        model.add(Dense(16, activation='relu'))
+        model.add(Dense(10, activation='relu'))
+        model.add(Dense(self.lable_num, activation='softmax'))
         # Compile model
         model.compile(loss='categorical_crossentropy',
                   optimizer=optimizer, 
                   metrics=['accuracy'])
-        
-        model.fit(train_X, train_Y, epochs=200, batch_size=1, verbose=0)
-        model.save_weights(self.location + "subjective/" + self.user + "_"  + self.output + "_ANN.h5")
-        self.loss_and_metrics = model.evaluate(self.test_X,  test_Y, batch_size=1)
-        classes = model.predict(X_scaled, batch_size=1)
+        if self.simulation == True:
+            model.load_weights(self.location  + '/subjective/user4_Satisfaction_ANN.h5')
+        else:
+            model.fit(self.train_X, self.train_Y, epochs=200, batch_size=2, verbose=0)
+            model.save_weights(self.location + "subjective/" + self.user + "_"  + self.output + "_ANN.h5")
+            self.loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=1)
+            self.test_Y = [np.argmax(values) + min(self.Y.flatten()) for values in self.test_Y ]
+        classes = model.predict(self.test_X, batch_size=2)      
         self.pred_Y = [np.argmax(values) + min(self.Y.flatten()) for values in classes]
-        print(min(self.Y.flatten()))
+            
 
 
     def evaluation(self, method_name):
-        fig, ax = plt.subplots(figsize=(12,8))
+        if self.simulation == False:
+            fig, ax = plt.subplots(figsize=(12,8))
 
-        ax.set(title=method_name + ":(categorical_crossentropy:%f; accuracy:%f;)" % (self.loss_and_metrics[0],
-         self.loss_and_metrics[1]), xlabel='Time', ylabel=self.output)
+            ax.set(title=method_name + ":(categorical_crossentropy:%f; accuracy:%f;)" % (self.loss_and_metrics[0],
+             self.loss_and_metrics[1]), xlabel='Time', ylabel=self.output)
 
-        # Plot data points
-        pd.DataFrame({"obervation": self.Y.flatten()}).plot(ax=ax, style='b.', markersize=10, label='Observed')
+            # Plot data points
+            pd.DataFrame({"obervation": self.test_Y}).plot(ax=ax, style='b.', markersize=10, label='Observed')
 
-        # Plot predictions with time
-        pd.DataFrame({"prediction": self.pred_Y}).plot(ax=ax, style='r.') 
-        legend = ax.legend(loc='lower right')  
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(-3.2, 3.2)       
-        ax.tick_params(labelsize = 18)                                         
-        plt.savefig(self.filename + "_" + method_name)
-        plt.close()
+            # Plot predictions with time
+            pd.DataFrame({"prediction": self.pred_Y}).plot(ax=ax, style='r.') 
+            legend = ax.legend(loc='lower right')  
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.set_ylim(-3.2, 3.2)       
+            ax.tick_params(labelsize = 18)                                         
+            plt.savefig(self.filename + "_" + method_name)
+            plt.close()
 
+        if self.simulation == False:
+            test_X = self.test_X*(self.Xmax - self.Xmin) + self.Xmin
+            test_df = pd.DataFrame(test_X, columns = self.input)
+            plot_x = "Temperature_0m"
+            plot_y = "Humidity_0m"
+        else:
+            test_df = self.simulatedDf
+            plot_x = "Ta"
+            plot_y = "Rh"
+        test_df["Prediction"] = self.pred_Y
+        print(test_df)
+         
+        if(self.output == "Satisfaction"):
+            color_list = ["#800000", "r", "#ff8000", "#66ccff", "#33ff33", "#00cc00", "#006600"]
+        else:
+            color_list = [ "b", "#33ffff", "#3399ff", "#33ff66", "#ff8000", "#ff4000", "#800000"]
+        output = [-3, -2,-1,0,1, 2, 3]
         fig, ax = plt.subplots(figsize=(12,6))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_xlim(-3.2, 3.2)
-        ax.set_xlabel('Thermal ' + self.output)
-        ax.set_ylabel('Skin Temperature 3m Absolute Gradiant($^\circ$C)')
-        ax.plot(self.data[self.output], self.data["Skin_0m"].subtract(self.data["Skin_3m"]).abs(),
-         "b.", markersize=10, label='Observation')
-        ax.plot(self.pred_Y, self.data["Skin_0m"].subtract(self.data["Skin_3m"]).abs(), 
-         "r.", label='prediction')
-  
-        plt.title(method_name + ":(categorical_crossentropy:%f; accuracy:%f;)" % (self.loss_and_metrics[0],
-         self.loss_and_metrics[1]))
-        ax.tick_params(labelsize = 18)
-        legend = ax.legend(loc='lower right')     
-        plt.savefig(self.filename  + "_Delta_" + method_name )
-        plt.close()
+        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylabel("Relative Humidity (%)",  fontsize=18)
+        ax.set_xlabel('Air Temperature ($^\circ$C)', fontsize=18)
+        #ax.set_xlim(18, 31.2)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.xticks(np.arange(16, air_high_limit + 1, 1.0))
+        for i in range(len(output)):
+            ax.scatter(test_df.loc[test_df["Prediction"] == output[i]][plot_x], 
+                test_df.loc[test_df["Prediction"] == output[i]][plot_y],
+             color = color_list[i], label= self.output + ":" + str(output[i]))
+        if self.simulation == False:
+            plt.title(self.user + ": Predicted Thermal Comfort, accuracy:%1.2f" % (
+             self.loss_and_metrics[1]), fontsize=20)
+        else:
+            plt.title(self.user + ": Predicted Thermal Comfort with Simulated Data", fontsize=20)
 
-        # self.data["Prediction"] = self.pred_Y
-        # if(self.output == "Satisfaction"):
-        #     color = ["r", "#EB631B", "#1B86EB", "#58FF33", "#186A06"]
-        # else:
-        #     color = [ "b", "#1B86EB", "#58FF33", "#EB631B", "r"]
-        # output = [-2,-1,0,1,2]
-        # fig, ax = plt.subplots(figsize=(12,6))
-        # plot_x = "Temperature_0m"
-        # plot_y = "Humidity_0m"
-        # ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        # #ax.set_ylim(-3.2, 3.2)
-        # ax.set_ylabel("Relative Humidity (%)")
-        # ax.set_xlabel('Air Temperature ($^\circ$C)')
-        # #ax.set_xlim(18, 31.2)
-        # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        # plt.xticks(np.arange(16, air_high_limit + 1, 2.0))
-        # for i in range(len(output)):
-        #     ax.scatter(self.data.loc[self.data["Prediction"] == output[i]][plot_x], 
-        #         self.data.loc[self.data["Prediction"] == output[i]][plot_y],
-        #      color = color[i], label= self.output + ":" + str(output[i]))
-        # plt.title(self.user + "_prediction")
-        # legend = ax.legend(loc='upper left')   
-        # plt.tight_layout()  
-        # plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + method_name)
-        # plt.close()   
+        ax.tick_params(labelsize = 18)
+        legend = ax.legend(loc='upper right', fontsize=12)   
+        plt.tight_layout() 
+        if self.simulation == False: 
+            plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + method_name)
+        else:
+            plt.savefig(self.filename + "_" + plot_x + "_" + plot_y + "_" + method_name + "_simulation" )
+        plt.close()   
 
 
     def mean_confidence_interval(self, data, confidence=0.95):
@@ -1105,7 +1217,7 @@ class subjectiveSimulator():
 
 
     def analyze_data_Ta_Rh(self, data, date="", marker="o"):
-        #https://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.htmlhttps://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.html
+        #https://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.html
         if(self.output == "Satisfaction"):
             color_list = ["#800000", "r", "#ff8000", "#66ccff", "#33ff33", "#00cc00", "#006600"]
             offset = 3
@@ -1120,12 +1232,12 @@ class subjectiveSimulator():
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_ylim(humidity_low_limit, humidity_high_limit)
         ax.set_ylabel("Relative Humidity (%)", fontsize=18)
-        ax.set_xlabel('Air Temperature ($^\circ$C)', fontsize=18)
+        ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlim(air_low_limit, air_high_limit + offset)
         plt.xticks(np.arange(17, air_high_limit, 1.0))
         date_list = data["Date"].unique()
-        marker_list = ["o", "*", "p", "s", "d", "^"]
+        marker_list = ["o", "*", "p", ">", "<", "d", "^", ]
 
         for j in range(len(date_list)):
             for i in range(len(output)):
@@ -1138,7 +1250,7 @@ class subjectiveSimulator():
             markerfacecolor='#E5E8E8')] 
         custom_legend = custom_legend + [Line2D([0], [0], marker= m, color='#E5E8E8', 
          markerfacecolor='g', markersize="10") for m in marker_list]
-        lengend_list = ["     Outdoor:(Ta,Rh)"]
+        lengend_list = [" Outdoor:(Ta$^\circ$C, Rh%)"]
         lengend_list = lengend_list + [str(date_list[i]) + ":" 
             + str(self.outdoor[i]) for i in range(len(date_list))]
         legend1 = plt.legend(custom_legend, lengend_list, loc='upper right',
@@ -1168,7 +1280,7 @@ class subjectiveSimulator():
     def combine_data(self):
         i = 0
         outdoor_list = []
-        marker_list = ["o", "*", "p", "s", "d", "^"]
+        marker_list = ["o", "*", "p", ">", "<", "d", "^", ]
         for tag in self.tags:
             date = tag[6:]
             vote_File = self.location + "voting-" + tag + ".csv"
@@ -1192,8 +1304,8 @@ class subjectiveSimulator():
     def process_data_Air_Skin_Sensation(self, skin_File, air_File, vote_File, outdoor_File):
         ####### process outdoor
 
-        data_outdoor = pd.read_csv(outdoor_File, names = ["Time", "Outdoor_Temperature", "Outdoor_Humidity"])
-        outdoor =  (data_outdoor.mean().round()["Outdoor_Temperature"], data_outdoor.mean().round()["Outdoor_Humidity"])
+        data_outdoor = pd.read_csv(outdoor_File, names = ["Time", "Out_Temperature", "Out_Humidity"])
+        outdoor =  (data_outdoor.mean().round()["Out_Temperature"], data_outdoor.mean().round()["Out_Humidity"])
         ####### process voting
         ### don't do resmaple, since time interval could be different
         data_vote = pd.read_csv(vote_File, names = ["Time", "Sensation", "Satisfaction"])
@@ -1201,6 +1313,7 @@ class subjectiveSimulator():
         data_vote.index = pd.DatetimeIndex(((data_vote.index.asi8/(1e9*60)).round()*1e9*60).astype(np.int64))
         data_vote.Time = data_vote.index
         data_vote = data_vote.drop_duplicates()
+
 
         ####### process skin temperature
         data_skin = pd.read_csv(skin_File, names = ["Time", "Skin"])
@@ -1250,8 +1363,15 @@ class subjectiveSimulator():
         data_vote_skin_air = data_vote_skin_air.join(data_air_3)
         data_vote_skin_air = data_vote_skin_air.join(data_air_4)
         data_vote_skin_air = data_vote_skin_air.join(data_air_5)
+
+        ##### process outdoor input 
+        data_outdoor.index = pd.to_datetime(data_outdoor.Time)
+        data_outdoor = data_outdoor.resample('60s').mean()
+        data_outdoor_0 = pd.DataFrame(np.array([data_outdoor[(data_outdoor.index == t)].mean()
+            for t in data_vote.index]), columns = ["Out_Temperature_0m", "Out_Humidity_0m"], index = data_vote.index)
+        data_vote_skin_air_out = data_vote_skin_air.join(data_outdoor_0)
       
-        return data_vote_skin_air, outdoor
+        return data_vote_skin_air_out, outdoor
 
 
 
@@ -1330,25 +1450,25 @@ def process_data_Air_Sensation(Envir_File, vote_file):
 
 def main():
     inSampleTime = '2018-02-10 18:08:00'
-    tags = {"user1" : ["user1-2018-2-20", "user1-2018-2-24", "user1-2018-3-2", "user1-2018-3-19"],
-    "user2": ["user2-2018-2-20", "user2-2018-2-25", "user2-2018-2-27", "user2-2018-3-2"], 
-    "user3": ["user3-2018-2-19", "user3-2018-2-27", "user3-2018-3-2", "user3-2018-3-14", "user3-2018-3-16", "user3-2018-3-17"],
-    "user4": ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-20"], 
-    "user5": ["user5-2018-3-4", "user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19", "user5-2018-3-20", "user5-2018-3-22"], 
-    "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21"]}
+    tags = {#"user1" : ["user1-2018-2-20", "user1-2018-2-24", "user1-2018-3-2", "user1-2018-3-19", "user1-2018-3-24"],
+    #"user2": ["user2-2018-2-20", "user2-2018-2-25", "user2-2018-2-27", "user2-2018-3-2", "user2-2018-3-23", "user2-2018-3-25"], 
+    #"user3": ["user3-2018-2-19", "user3-2018-2-27", "user3-2018-3-2", "user3-2018-3-14", "user3-2018-3-16", "user3-2018-3-17", "user3-2018-3-24"],
+    "user4": ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-20", "user4-2018-3-23", "user4-2018-3-24"]}#, 
+    #"user5": ["user5-2018-3-4", "user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19", "user5-2018-3-20", "user5-2018-3-22", "user5-2018-3-25"], 
+    #"user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21", "user6-2018-3-24"]}
 
-    for i in range(1, 7):
+    for i in range(4, 5):
         user = "user" + str(i)
         location = "csv/" + user + "/"
         
-        skin_simulator = skinSimulator(user, tags[user], ["Air Temperature", "Relative Humidity"], "Skin Temperature")  
-        #skin_simulator.evaluation()
+        # skin_simulator = skinSimulator(user, tags[user], ["Air Temperature", "Relative Humidity"], "Skin Temperature", False)  
+        # skin_simulator.evaluation()
 
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user])
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], True)
         sub_simulator.neural_network("adam")
         sub_simulator.evaluation("neural_network")
 
-        sub_simulator = subjectiveSimulator(user, "Sensation", tags[user])
+        # sub_simulator = subjectiveSimulator(user, "Sensation", tags[user])
         # sub_simulator.neural_network("adam")
         # sub_simulator.evaluation("neural_network")
         
