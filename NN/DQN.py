@@ -29,8 +29,8 @@ class DQNAgent:
         model = Sequential()
         model.add(Dense(self.state_size, input_dim=self.state_size, activation='relu'))
         model.add(Dense(24, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss='mse', optimizer='sgd')
+        model.add(Dense(self.action_size, activation='relu'))
+        model.compile(loss='categorical_crossentropy', optimizer='sgd')
  
         # model.compile(loss='mse',
         #               optimizer=Adam(lr=self.learning_rate))
@@ -78,7 +78,7 @@ class DQNAgent:
 
 def make_epsilon_greedy_policy(agent, epsilon, nA):
     """
-    Creates an epsilon-greedy policy based on a given Q-function approximator and epsilon.
+    Creates an epsilon-greedy policy based on a given Q-network and epsilon.
     
     Args:
         epsilon: The probability to select a random action . float between 0 and 1.
@@ -134,18 +134,17 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
             action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
             next_state, reward, done, _ = env.step(action)
             env.my_render()
-            #stats.episode_rewards[i_episode] += reward
-            #stats.episode_lengths[i_episode] = t
+            stats.episode_rewards[i_episode] += reward
+            stats.episode_lengths[i_episode] = t
             next_state = np.reshape(next_state, [1, env.nS])
             agent.remember(state, action, reward, next_state, done)
             state = next_state
-            print("episode: {}/{}, score: {}, e: {:.2}"
-                      .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
             if done:
-                
-                # if(i_episode%2 == 0):
-                #     if epsilon > epsilon_min:
-                #         epsilon *= epsilon_decay
+                if(i_episode%20 == 0):
+                    if epsilon > epsilon_min:
+                        epsilon *= epsilon_decay
+                print("episode: {}/{}, score: {}, e: {:.2}"
+                      .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
                 break
             if len(agent.memory) > batch_size:
                     agent.replay(batch_size)    

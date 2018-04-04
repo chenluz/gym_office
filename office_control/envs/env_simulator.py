@@ -174,7 +174,6 @@ class TempSimulator():
         self.data = self.process_data_Action_Air(env_File)[data_list].dropna()
         #self.analyze_data(self.data)
         self.X = self.data[input_list[0:3]]
-        print(self.X)
         scalerX = MinMaxScaler()
         scalerX.fit(self.X)
         self.X = scalerX.transform(self.X)
@@ -530,7 +529,8 @@ class HumiditySimulator():
             self.simulatedData = {
             "Ta": (np.random.choice(np.arange(self.X_min[0], self.X_max[0], 0.5), 1000) 
                     - self.X_min[0])/(self.X_max[0] - self.X_min[0]),
-            "Rh_Out": (np.random.choice(np.arange(self.X_min[1], self.X_max[1], 0.5), 1000) - self.X_min[1])/(self.X_max[1] - self.X_min[1]),
+            "Rh_Out": (np.random.choice(np.arange(self.X_min[1], self.X_max[1], 0.5), 1000) 
+                - self.X_min[1])/(self.X_max[1] - self.X_min[1]),
             }
             self.simulatedDf = pd.DataFrame(self.simulatedData).ix[:,["Ta", "Rh_Out"]]
             self.test_X = self.simulatedDf.as_matrix()
@@ -1105,6 +1105,7 @@ class subjectiveSimulator():
         self.input = ["Skin_0m", "Temperature_0m", "Humidity_0m"]#"Out_Temperature_0m", "Out_Humidity_0m"
         self.pred_Y = None
         self.loss_and_metrics  = None
+        self.test_acu = 0
         self.X_max = np.asarray([skin_high_limit, air_high_limit, humidity_high_limit])
         self.X_min = np.asarray([skin_low_limit, air_low_limit, humidity_low_limit])
         if simulate_train == True:
@@ -1228,18 +1229,20 @@ class subjectiveSimulator():
         
         if self.simulation == True:
             if self.further_train == True:
-                model.load_weights(self.location  + '/subjective/user4_PMV_Satisfaction_ANN.h5')
+                model.load_weights(self.location  + '/subjective/user4_PMV_Real_Satisfaction_ANN.h5')
             else:
                 model.load_weights(self.location  + '/subjective/user4_Satisfaction_ANN.h5')
         else:
             if self.further_train == True:
                 model.load_weights(self.location  + '/subjective/user4_PMV_Satisfaction_ANN.h5')
+                loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=2)  
+                self.test_acu = loss_and_metrics[1]
             model.fit(self.train_X, self.train_Y, epochs=200, batch_size=2, verbose=0)
             if self.simulate_train == True:
                 model.save_weights(self.location + "subjective/" + self.user + "_PMV_"  + self.output + "_ANN.h5")
             else:
                 model.save_weights(self.location + "subjective/" + self.user + "_PMV_Real_"  + self.output + "_ANN.h5")
-            self.loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=1)
+            self.loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=2)
             self.test_Y = [np.argmax(values) + min(self.Y.flatten()) for values in self.test_Y ]
         classes = model.predict(self.test_X, batch_size=2)      
         self.pred_Y = [np.argmax(values) + min(self.Y.flatten()) for values in classes]
@@ -1278,12 +1281,15 @@ class subjectiveSimulator():
         test_X = self.test_X*(self.X_max - self.X_min) + self.X_min
         test_df = pd.DataFrame(test_X, columns = self.input)
         if(self.further_train == True and self.simulation == False):
+            # put real testing data into PMV equation
             satisfaction, sensation = self.PMV(test_df)
             count = 0 
             for i in range(len(satisfaction)):
                 if satisfaction[i] == self.test_Y[i]:
                     count += 1
-            accuracy = count*1.0/len(satisfaction)
+            accuracy_PMV = count*1.0/len(satisfaction)
+           
+
 
         plot_x = "Temperature_0m"
         plot_y = "Humidity_0m"
@@ -1308,8 +1314,8 @@ class subjectiveSimulator():
              color = color_list[i], label= self.output + ":" + str(output[i]))
         if self.simulation == False:
             if self.further_train == True:
-                plt.title(self.user + ": PMV Pretrained Neutral Network accuracy:%1.2f, PMV accuracy:%1.2f" % (
-                self.loss_and_metrics[1], accuracy), fontsize=20)
+                plt.title(self.user + ": PMV+Real Neutral Network:%1.2f, PMV Neutral Network:%1.2f,PMV :%1.2f" % (
+                self.loss_and_metrics[1], self.test_acu, accuracy_PMV), fontsize=20)
             else:
                 plt.title(self.user + ": Predicted Thermal Comfort, accuracy:%1.2f" % (
                 self.loss_and_metrics[1]), fontsize=20)
@@ -1767,8 +1773,10 @@ class subjectiveSimulator():
 
 
 def main():
-    tags_hu = {"user4" :  ["user4-2018-2-19", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-23"]}
-    for i in range(4,4):
+    tags_hu = {"user4" :  ["user4-2018-2-19", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-23"], 
+    "user5" :  ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-23", "user4-2018-3-24"],
+     "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-21", "user6-2018-3-24"]}
+    for i in range(5,5):
         user = "user" + str(i)
         rh_simulator = HumiditySimulator(user, tags_hu[user], False)
         rh_simulator.evaluation()
@@ -1784,7 +1792,7 @@ def main():
     "user5": ["user5-2018-3-4", "user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19", "user5-2018-3-20", "user5-2018-3-22", "user5-2018-3-25"], 
     "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21", "user6-2018-3-24"]}
 
-    for i in range(4, 5):
+    for i in range(4, 4):
         user = "user" + str(i)
         
         # skin_simulator = skinSimulator(user, tags[user], ["Air Temperature", "Relative Humidity"], "Skin Temperature", False)  
@@ -1797,24 +1805,24 @@ def main():
         # sub_simulator.neural_network("adam")
         # sub_simulator.evaluation("neural_network")
 
-        # train with real data
-        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, False)
-        # sub_simulator.neural_network("adam")
-        # sub_simulator.evaluation("neural_network")
+        #train with real data
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, False)
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")
 
-        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, True)
-        # sub_simulator.neural_network("adam")
-        # sub_simulator.evaluation("neural_network")
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, True)
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")
 
-        # train with PMV data
-        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], True, False, False)
-        # sub_simulator.neural_network("adam")
-        # sub_simulator.evaluation("neural_network")  
+        #train with PMV data
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], True, False, False)
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")  
 
-        # # train with real data using PMV model
-        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, False)
-        # sub_simulator.neural_network("adam")
-        # sub_simulator.evaluation("neural_network")
+        # train with real data using PMV model
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, False)
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")
 
         sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, True)
         sub_simulator.neural_network("adam")
@@ -1830,7 +1838,7 @@ def main():
     #             location + "environment-user2-2018-3-6.csv",
     #             location + "environment-user4-2018-3-6.csv",
     #             location + "environment-user6-2018-3-6.csv"]
-    location = "/csv/"
+    location = "csv/env/"
     env_File = [location + "action.csv",
                 location + "environment-outdoor-2018-3-13.csv",
                 location + "environment-user1-2018-3-13.csv",
@@ -1845,9 +1853,9 @@ def main():
     #plot_observation(data_m, location + "Temperature_Satisfaction_" + tag, "Temperature", "Satisfaction", False, tag)
 
 
-    # env_simulator = envSimulator(location, env_File, "user4 ", ["Previous Air Temperature", 
-    #     "Previous Action" ,"outdoor Previous Air Temperature"], "Air Temperature", 
-    #     location + " envSimulator")
+    temp_simulator = TempSimulator(location, env_File, "user4 ", ["Previous Air Temperature", 
+        "Previous Action" ,"outdoor Previous Air Temperature"], "Air Temperature", 
+        location + " envSimulator")
     # env_simulator = envSimulator(location, env_File, "user4 ", ["Previous Relative Humidity", "Previous Action", 
     #     "outdoor Previous Relative Humidity"],
     #   "Relative Humidity", location + "envSimulator")

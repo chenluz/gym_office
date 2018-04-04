@@ -11,8 +11,43 @@ from sklearn.kernel_ridge import KernelRidge
 from keras.models import Sequential
 from keras.layers import Dense
 import numpy as np
-
+import pandas as pd
 ## ref: https://github.com/CenterForTheBuiltEnvironment/comfort_tool/blob/master/contrib/comfort_models.py
+############need to change for different users #############
+Ts_min = 25
+Ts_max = 37
+Ta_min = 16.5
+Ta_max = 32
+Rh_min = 12
+Rh_max = 44
+Rh_out_min = 24
+Rh_out_max = 85
+Ta_out_min = 5.77
+Ta_out_max = 22
+Ta_action_min = 18.6
+Ta_action_max = 24.8
+Ta_out_action_min = 5.77
+Ta_out_action_max = 10.1
+############need to change for different users #############
+A_min = 0
+A_max = 3
+
+class outdoorSet():
+    """
+    read the outdoor tempeature and relative humidity from csv
+    """
+    def __init__(self):  
+        ##### process outdoor air temperature and relative humidity 
+        data_outdoor = pd.read_csv("user4/environment-outdoor-2018-3-13.csv", names = ["Time", "Out_Temperature", "Out_Humidity"])
+        data_outdoor.index = pd.to_datetime(data_outdoor.Time)
+        self.data_outdoor = data_outdoor.resample('300s').mean().dropna()
+    
+    def get_out(self, step_count):
+        index = self.data_outdoor.index
+        Out_Temperature = self.data_outdoor.get_value(index[step_count], "Out_Temperature")
+        Out_Humidity = self.data_outdoor.get_value(index[step_count], "Out_Humidity")
+        return (Out_Temperature, Out_Humidity)
+
 
 class airEnviroment():
     """
@@ -20,17 +55,34 @@ class airEnviroment():
 
     """
     def __init__(self):  
-        pass
+        self.temp_model = pickle.load(open("user4/envSimulator_Action4_user4_Air Temperature_SVR.sav", 'rb'))
+        self.humi_model = pickle.load(open("user4/temperature_user4_Humidity_kernel.sav", 'rb'))
 
-    def get_air_temp(self,action, pre_Ta):
-        loaded_model = pickle.load(open("user3/envSimulator_Temperature_kernel.sav", 'rb'))
-        result = loaded_model.predict([[action, pre_Ta]])
+    def get_air_temp(self,action, pre_Ta, pre_out_Ta):  
+        _input = self.process_state_air(action, pre_Ta, pre_out_Ta)
+        # input should be indoor, action outdoor
+        Ta = self.temp_model.predict([_input]).flatten()[0]
+        result = Ta*(Ta_action_max - Ta_action_min) + Ta_action_min
         return result
 
-    def get_air_humidity(self,action, pre_Rh):
-        loaded_model = pickle.load(open("user3/envSimulator_Humidity_kernel.sav", 'rb'))
-        result = loaded_model.predict([[action, pre_Rh]])
+    def process_state_air(self, action, pre_Ta, pre_out_Ta):
+        action = (action - A_min)/(A_max - A_min)
+        pre_Ta = (pre_Ta - Ta_action_min)/(Ta_action_max - Ta_action_min)
+        pre_out_Ta = (pre_out_Ta - Ta_out_action_min)/(Ta_out_action_max - Ta_out_action_min)
+        return [pre_Ta, action, pre_out_Ta]
+
+    def get_air_humidity(self, Ta, out_Rh):
+        
+        _input = self.process_state_humidity(Ta, out_Rh)
+        # input should be indoor, action outdoor
+        Rh = self.humi_model.predict([_input]).flatten()[0]
+        result = Rh*(Rh_max - Rh_min) + Rh_min
         return result
+
+    def process_state_humidity(self, Ta, out_Rh):
+        Ta = (Ta - Ta_min)/(Ta_max - Ta_min)
+        out_Rh = (out_Rh - Rh_min)/(Rh_max - Rh_min)
+        return [Ta, out_Rh]
 
 
 class airVelocity():
@@ -66,7 +118,7 @@ class skinTemperature():
     """
 
     def __init__(self):  
-        pass
+        self.skin_model = pickle.load(open("user4/Skin_user4_Skin Temperature_SVR.sav", 'rb'))
     
 
     def skin_SVR(self, cur_Ta, cur_Rh):
@@ -76,9 +128,18 @@ class skinTemperature():
         to predict skin temperature
 
         """
-        loaded_model = pickle.load(open("user3/Skin_SVR.sav", 'rb'))
-        result = loaded_model.predict([[cur_Ta, cur_Rh]])
+        
+        _input =self.process_state(cur_Ta, cur_Rh)
+        Ts = self.skin_model.predict([_input]).flatten()[0]
+        result = Ts*(Ts_max - Ts_min) + Ts_min
         return result
+
+
+    def process_state(self, cur_Ta, cur_Rh):
+        cur_Ta = (cur_Ta - Ta_min)/(Ta_max - Ta_min)
+        cur_Rh = (cur_Rh - Rh_min)/(Rh_max - Rh_min)
+        return [cur_Ta, cur_Rh]
+
 
     def comfPierceSET(self, ta, tr, rh, clo, vel=0.1, met = 1.1, wme = 0, BODYWEIGHT = 69.9, BODYSURFACEAREA = 1.8258):
         """
@@ -279,47 +340,38 @@ class skinTemperature():
             X = X_OLD - DELTA * ERR1 / (ERR2 - ERR1)
             dx = X - X_OLD
             X_OLD = X
-
         return TempSkin
 
 
 
 class feedback():
     def __init__(self):  
-        pass
-
-
-    def Satisfaction_neural(self, cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta,  pre_Rh):
-        X = self.process_state(cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta, pre_Rh).reshape(-1, 6)
-        min_lable = -3
-        model = Sequential()
-        model.add(Dense(6, input_dim=6, activation='relu'))
-        model.add(Dense(12, activation='relu'))
-        model.add(Dense(7, activation='softmax'))
-        model.compile(loss='categorical_crossentropy',
+        self.model = Sequential()
+        self.model.add(Dense(3, input_dim=3, activation='relu'))
+        self.model.add(Dense(10, activation='relu'))
+        self.model.add(Dense(20, activation='relu'))
+        self.model.add(Dense(7, activation='softmax'))
+        self.model.compile(loss='categorical_crossentropy',
                   optimizer='adam', 
                   metrics=['accuracy'])
-        model.load_weights('user3/Satisfaction_ANN.h5')
-        classes = model.predict(X)
+        self.model.load_weights('user4/user4_PMV_Real_Satisfaction_ANN.h5')
+
+
+    def Satisfaction_neural(self, cur_Ts, cur_Ta, cur_Rh):
+        X = self.process_state(cur_Ts, cur_Ta, cur_Rh).reshape(-1, 3)
+        min_lable = -3
+        classes = self.model.predict(X)
         result = [np.argmax(values) + min_lable for values in classes][0]
         return result
 
-    def process_state(self, cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta, pre_Rh):
-        ############need to change for different users #############
-        Ts_min = 29.53
-        Ts_max = 35.9
-        Ta_min = 21.94
-        Ta_max = 29.7
-        Rh_min = 17.73
-        Rh_max = 38.84
+    def process_state(self, cur_Ts, cur_Ta, cur_Rh):
         cur_Ts = (cur_Ts - Ts_min)/(Ts_max - Ts_min)
         cur_Ta = (cur_Ta - Ta_min)/(Ta_max - Ta_min)
         cur_Rh = (cur_Rh - Rh_min)/(Rh_max - Rh_min)
-        pre_Ts = (pre_Ts - Ts_min)/(Ts_max - Ts_min)
-        pre_Ta = (pre_Ta - Ta_min)/(Ta_max - Ta_min)
-        pre_Rh = (pre_Rh - Rh_min)/(Rh_max - Rh_min)
-        return np.array([cur_Ts, cur_Ta, cur_Rh, pre_Ts, pre_Ta, pre_Rh])
-        ############need to change for different users #############
+        # pre_Ts = (pre_Ts - Ts_min)/(Ts_max - Ts_min)
+        # pre_Ta = (pre_Ta - Ta_min)/(Ta_max - Ta_min)
+        # pre_Rh = (pre_Rh - Rh_min)/(Rh_max - Rh_min)
+        return np.array([cur_Ts, cur_Ta, cur_Rh])
 
 
     def comfPMV(self, ta, tr, rh,  clo, vel=0.1, met =1.1, wme = 0):
@@ -405,3 +457,13 @@ class feedback():
 
         return r
 
+# outdoor = outdoorSet()
+# temp, humid = outdoor.get_out(20)
+# air = airEnviroment()
+# skin = skinTemperature()
+# vote = feedback()
+# print(temp)
+# print(air.get_air_temp(3, 20, temp)) # not reasonable
+# print(air.get_air_humidity(20, humid))
+# print(skin.skin_SVR(25.2, 30.69))
+# print(vote.Satisfaction_neural(32.33, 25.2, 38.69))
