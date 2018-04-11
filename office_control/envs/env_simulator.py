@@ -41,6 +41,8 @@ import statistics
 import scipy as sp
 import scipy.stats
 import math
+import humidity 
+import seaborn as sns
 
 from numpy.random import seed
 seed(1)
@@ -52,10 +54,18 @@ skin_low_limit = 25
 skin_high_limit = 37
 air_low_limit = 16.5
 air_high_limit = 32
-humidity_low_limit = 12
-humidity_high_limit = 44
-Rh_out_low_limit = 24
-Rh_out_high_limit = 85
+Rh_low_limit = 12
+Rh_high_limit = 44
+humidity_low_limit = 0.001
+humidity_high_limit = 0.008
+Rh_out_low_limit = 17
+Rh_out_high_limit = 82
+
+humidity_out_low_limit = 0.001
+humidity_out_high_limit = 0.015
+
+Ta_out_low_limit = 0
+Ta_out_high_limit = 21
 clo = {"user1": "1.0", "user2":"1.0", "user3":"1.0", 
 "user4":"1.0", "user5":"1.0", "user6": "0.72"}
 # Rh_in_limit = {"user4":[14.8, 42.5]}  # for indoor humidity prediction
@@ -501,26 +511,26 @@ Relative Humidity Simulator
 """
 class HumiditySimulator():
     """
-    Simulate relative humidity according to inddor air temperature and outdoor air humidity 
+    Simulate relative humidity according to indoor air temperature and outdoor air humidity 
 
     """
     def __init__(self, user, tags, simulation=False): 
         self.location = "csv/" + user + "/"
         self.tags = tags
         self.user  = user
-        self.output = "Humidity"
+        self.output = "RH"
         self.filename = self.location + "environment/temperature" + "_" + user      
         data_with_nan = self.combine_data()
         self.data = data_with_nan.dropna()
         self.simulation = simulation
-        self.X = self.data[["Temperature", "Out_Humidity"]].as_matrix()
+        self.X = self.data[["Temperature", "Out_RH"]].as_matrix()
         
         self.Y = self.data[self.output ].as_matrix().reshape(-1, 1)
-        self.X_max = np.asarray([air_high_limit, Rh_out_high_limit])
-        self.X_min = np.asarray([air_low_limit, Rh_out_low_limit])
+        self.X_max = np.asarray([air_high_limit, Rh_out_high_limit]) 
+        self.X_min = np.asarray([air_low_limit, Rh_out_low_limit]) 
         self.X = (self.X - self.X_min)/(self.X_max - self.X_min)
-        self.Y_max = np.asarray([humidity_high_limit])
-        self.Y_min = np.asarray([humidity_low_limit])
+        self.Y_max = np.asarray([Rh_high_limit])
+        self.Y_min = np.asarray([Rh_low_limit])
         self.Y = (self.Y - self.Y_min)/(self.Y_max - self.Y_min)
 
         self.train_X, self.test_X, self.train_Y, self.test_Y = train_test_split(
@@ -529,10 +539,12 @@ class HumiditySimulator():
             self.simulatedData = {
             "Ta": (np.random.choice(np.arange(self.X_min[0], self.X_max[0], 0.5), 1000) 
                     - self.X_min[0])/(self.X_max[0] - self.X_min[0]),
-            "Rh_Out": (np.random.choice(np.arange(self.X_min[1], self.X_max[1], 0.5), 1000) 
-                - self.X_min[1])/(self.X_max[1] - self.X_min[1]),
+            # "Out_Humidity": (np.random.choice(np.arange(self.X_min[1], self.X_max[1], 0.0002), 1000) 
+            #     - self.X_min[1])/(self.X_max[1] - self.X_min[1]),
+            "Out_Humidity": (np.random.choice(np.arange(self.X_min[1], self.X_max[1], 0.5), 1000) 
+                 - self.X_min[1])/(self.X_max[1] - self.X_min[1]),
             }
-            self.simulatedDf = pd.DataFrame(self.simulatedData).ix[:,["Ta", "Rh_Out"]]
+            self.simulatedDf = pd.DataFrame(self.simulatedData).ix[:,["Ta", "Out_Humidity"]]
             self.test_X = self.simulatedDf.as_matrix()
            
             
@@ -558,7 +570,7 @@ class HumiditySimulator():
             pickle.dump(model, open(modelname, 'wb'))
         else:
             # load model from disk
-            model = pickle.load(open(self.filename + "_Humidity_kernel.sav", 'rb'))
+            model = pickle.load(open(self.filename + "_RH_kernel.sav", 'rb'))
 
         pred_train_Y = model.predict(self.train_X)
         pred_test_Y = model.predict(self.test_X)
@@ -576,7 +588,7 @@ class HumiditySimulator():
             pickle.dump(model, open(modelname, 'wb'))
         else:
             # load model from disk
-            model = pickle.load(open(self.filename + "_Humidity_SVR.sav", 'rb'))
+            model = pickle.load(open(self.filename + "_RH_SVR.sav", 'rb'))
 
         pred_train_Y = model.predict(self.train_X)
         pred_test_Y = model.predict(self.test_X)
@@ -589,9 +601,14 @@ class HumiditySimulator():
             fig, ax = plt.subplots(figsize=(12,8))
 
             # Plot observed data points
-            pd.DataFrame({"Observation":self.data[self.output].tolist()}, 
+            # pd.DataFrame({"Outdoor Humidity":self.data["Out_Humidity"].tolist()}, 
+            #     index = range(0, len(self.data.index))).plot(ax=ax, 
+            #    style='b', label='Outdoor Humidity')
+
+            # Plot observed data points
+            pd.DataFrame({"Indoor Humidity":self.data[self.output].tolist()}, 
                 index = range(0, len(self.data.index))).plot(ax=ax, 
-               style='k', label='Observed')
+               style='k', label='Indoor Humidity')
 
             # SVR 
             (SVR_train_test_Y, SVR_pred_test_Y, SVR_pred_Y) = self.SVR()
@@ -613,7 +630,8 @@ class HumiditySimulator():
 
             plt.title("Testing Error: (Kernel:%f); (SVR:%f)" % (MSE_ker, MSE_SVR), fontsize=20)
             ax.set_xlabel('Minutes', fontsize=18)
-            ax.set_ylabel('Humidity (%)', fontsize=18)
+            #ax.set_ylabel('Humidity Ratio (kg/kg)', fontsize=18)
+            ax.set_ylabel('Relative Humidity(%)', fontsize=18)
             ax.tick_params(labelsize = 18)
             
 
@@ -634,8 +652,12 @@ class HumiditySimulator():
             ax = plt.axes(projection='3d')
             ax.scatter3D(test_df["Temperature"], test_df["Humidity_Out"], 
                 test_df["Humidity_In"], c=test_df["Humidity_In"], cmap='Blues');
-            ax.set_zlabel("Indoor Relative Humidity(%)", fontsize=14)
-            ax.set_zlim(humidity_low_limit, humidity_high_limit)
+            # ax.set_zlabel("Indoor Humidity Ratio(kg/kg)", fontsize=14)
+            # ax.set_zlim(humidity_low_limit, humidity_high_limit)
+            # ax.set_ylabel("Outdoor Humidity Ratio(kg/kg)", fontsize=14)
+            # ax.set_ylim(humidity_out_low_limit, humidity_out_high_limit)
+            ax.set_zlabel("Indoor Relative Humidity (%)", fontsize=14)
+            ax.set_zlim(Rh_low_limit, Rh_high_limit)
             ax.set_ylabel("Outdoor Relative Humidity(%)", fontsize=14)
             ax.set_ylim(Rh_out_low_limit, Rh_out_high_limit)
             ax.set_xlabel("Indoor Temperature($^\circ$C)", fontsize=14)
@@ -648,11 +670,17 @@ class HumiditySimulator():
         else:
             fig, ax = plt.subplots(figsize=(12,8))
             ax = plt.axes(projection='3d')
-            ax.scatter3D(self.data["Temperature"], self.data["Out_Humidity"], 
-                self.data["Humidity"], c=self.data["Humidity"], cmap='Blues');
-            ax.set_zlabel("Indoor Relative Humidity(%)", fontsize=14)
-            ax.set_zlim(humidity_low_limit, humidity_high_limit)
-            ax.set_ylabel("Outdoor Relative Humidity(%)", fontsize=14)
+            # ax.scatter3D(self.data["Temperature"], self.data["Out_Humidity"], 
+            #     self.data["Humidity"], c=self.data["Humidity"], cmap='Blues');
+            # ax.set_zlabel("Indoor  Humidity Ratio(kg/kg)", fontsize=14)
+            # ax.set_zlim(humidity_low_limit, humidity_high_limit)
+            # ax.set_ylabel("Outdoor Humidity Ratio(kg/kg)", fontsize=14)
+            # ax.set_ylim(humidity_out_low_limit, humidity_out_high_limit)
+            ax.scatter3D(self.data["Temperature"], self.data["Out_RH"], 
+                self.data["RH"], c=self.data["RH"], cmap='Blues');
+            ax.set_zlabel("Indoor Relative Humidity (%)", fontsize=14)
+            ax.set_zlim(Rh_low_limit, Rh_high_limit)
+            ax.set_ylabel("Outdoor Relative Humidity (%)", fontsize=14)
             ax.set_ylim(Rh_out_low_limit, Rh_out_high_limit)
             ax.set_xlabel("Indoor Temperature($^\circ$C)", fontsize=14)
             ax.set_xlim(air_low_limit, air_high_limit)
@@ -683,16 +711,18 @@ class HumiditySimulator():
 
     def process_data_Air_Rh(self, air_File, outdoor_File):
         ####### process indoor air temperature and relative humidity
-        data_air = pd.read_csv(air_File, names = ["Time", "Temperature", "Humidity"])
+        data_air = pd.read_csv(air_File, names = ["Time", "Temperature", "RH"])
         data_air.index = pd.to_datetime(data_air.Time)
+        data_air["Humidity"] = get_humidity_ratio(data_air["Temperature"].tolist(), data_air["RH"].tolist())
         # empty item filled with the value after it
         data_air= data_air.resample('30s').mean()
         ##### process outdoor air temperature and relative humidity 
-        data_outdoor = pd.read_csv(outdoor_File, names = ["Time", "Out_Temperature", "Out_Humidity"])
+        data_outdoor = pd.read_csv(outdoor_File, names = ["Time", "Out_Temperature", "Out_RH"])
         data_outdoor.index = pd.to_datetime(data_outdoor.Time)
         data_outdoor = data_outdoor.resample('30s').mean()
         data_outdoor_0 = pd.DataFrame(np.array([data_outdoor[(data_outdoor.index == t)].mean()
-            for t in data_air.index]), columns = ["Out_Temperature", "Out_Humidity"], index = data_air.index)
+            for t in data_air.index]), columns = ["Out_Temperature", "Out_RH"], index = data_air.index)
+        data_air["Out_Humidity"] = get_humidity_ratio(data_outdoor_0["Out_Temperature"].tolist(), data_outdoor_0["Out_RH"].tolist())
         data_air_out = data_air.join(data_outdoor_0)
       
         return data_air_out
@@ -725,8 +755,8 @@ class skinSimulator():
             self.analyze_data_Ta_Rh(self.data)
         self.X = self.data[input_list].as_matrix()
         self.Y = self.data['Skin Temperature'].as_matrix().reshape(-1, 1)
-        self.X_max = np.asarray([air_high_limit, humidity_high_limit])
-        self.X_min = np.asarray([air_low_limit, humidity_low_limit])
+        self.X_max = np.asarray([air_high_limit, Rh_high_limit])
+        self.X_min = np.asarray([air_low_limit, Rh_low_limit])
         self.X = (self.X - self.X_min)/(self.X_max - self.X_min)
         self.Y_max = np.asarray([skin_high_limit])
         self.Y_min = np.asarray([skin_low_limit])
@@ -736,7 +766,7 @@ class skinSimulator():
             self.X, self.Y, test_size=0.3, random_state=42)
         if self.simulation == True: 
             # predict humidity based on random selected indoor tempeature and outdoor humidity in certrain ranges 
-            model = pickle.load(open(self.location + "environment/temperature_" + self.user + "_Humidity_kernel.sav", 'rb'))
+            model = pickle.load(open(self.location + "environment/temperature_" + self.user + "_RH_kernel.sav", 'rb'))
             Ta = (np.random.choice(np.arange(air_low_limit, air_high_limit, 0.5), 1000) 
                 - air_low_limit)/(air_high_limit - air_low_limit)
             self.simulatedData1 = {
@@ -900,7 +930,7 @@ class skinSimulator():
         plot_x = "Air Temperature"
         plot_y = "Relative Humidity"
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylim(Rh_low_limit, Rh_high_limit)
         ax.set_ylabel("Relative Humidity (%)", fontsize=18)
         ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -936,7 +966,6 @@ class skinSimulator():
 
     def analyze_data_Ta_Rh(self, data):
         #https://matplotlib.org/devdocs/gallery/text_labels_and_annotations/custom_legends.html
-        marker_list = ["o", "*", "+", "s", "p", "D"]
         color_list = [  "b", "#02B2FF", "#02FFFF", "#28FF02", "y", "#FF9402", "#FF5602", "r", "#800000"]
         data["Date"] = data.index.date
         output_H = range(28, 37, 1)
@@ -945,7 +974,7 @@ class skinSimulator():
         plot_x = "Air Temperature"
         plot_y = "Relative Humidity"
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylim(Rh_low_limit, Rh_high_limit)
         ax.set_ylabel("Relative Humidity (%)", fontsize=18)
         ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -953,7 +982,7 @@ class skinSimulator():
         ax.tick_params(labelsize = 18)
         plt.xticks(np.arange(17, air_high_limit, 1.0))
         date_list = data["Date"].unique()
-        marker_list = ["o", "*", "p", ">", "<", "d", "^", ]
+        marker_list = ["o", "*", "p", ">", "<", "d", "^", "x"]
 
         # for j in range(len(date_list)):
         #     ax.scatter(data.loc[(data["Date"] == date_list[j])][plot_x], 
@@ -1023,20 +1052,20 @@ class skinSimulator():
                 data = data.append(one_data)
             plot_observation(one_data, self.location + "skin/" + "Temperature_Humidity_" + tag, 
                  "Air Temperature", "Relative Humidity", False, tag, air_low_limit, air_high_limit, 
-                 humidity_low_limit, humidity_high_limit)
+                 Rh_low_limit, Rh_high_limit)
             plot_observation(one_data, self.location + "skin/" + "Temperature_Skin_" + tag, 
                 "Air Temperature", "Skin Temperature", False, tag, air_low_limit, air_high_limit, 
                  skin_low_limit, skin_high_limit)
             i += 1
         plot_observation(data, self.location + "skin/" + "Temperature_Humidity_" + self.user, 
                  "Air Temperature", "Relative Humidity", False, self.user, air_low_limit, air_high_limit, 
-                 humidity_low_limit, humidity_high_limit)
+                 Rh_low_limit, Rh_high_limit)
         plot_observation(data, self.location + "skin/" + "Temperature_Skin_" + self.user, 
                 "Air Temperature", "Skin Temperature", False, self.user, air_low_limit, air_high_limit, 
                  skin_low_limit, skin_high_limit)
         plot_observation(data, self.location + "skin/" + "Humidity_Skin_" + self.user, 
-                "Relative Humidity", "Skin Temperature", False, self.user,  humidity_low_limit, 
-                humidity_high_limit, skin_low_limit, skin_high_limit)
+                "Relative Humidity", "Skin Temperature", False, self.user,  Rh_low_limit, 
+                Rh_high_limit, skin_low_limit, skin_high_limit)
         self.plot_3D_observation(data)
         return data, outdoor_list
 
@@ -1094,7 +1123,7 @@ class subjectiveSimulator():
         filename: str, specify the model name and png name that will be saved 
 
     """
-    def __init__(self, user, output, tags,  simulate_train = False, further_train= False, simulation = False): 
+    def __init__(self, user, output, tags,  simulate_train = False, further_train= False, simulation = False, figure=None): 
         self.simulation = simulation
         self.simulate_train = simulate_train
         self.further_train = further_train
@@ -1102,12 +1131,12 @@ class subjectiveSimulator():
         self.tags = tags
         self.user  = user
         self.output = output
-        self.input = ["Skin_0m", "Temperature_0m", "Humidity_0m"]#"Out_Temperature_0m", "Out_Humidity_0m"
+        self.input = ["Skin_0m", "Temperature_0m", "Humidity_0m"]#, , "Out_Temperature_0m", "Out_Humidity_0m"
         self.pred_Y = None
         self.loss_and_metrics  = None
         self.test_acu = 0
-        self.X_max = np.asarray([skin_high_limit, air_high_limit, humidity_high_limit])
-        self.X_min = np.asarray([skin_low_limit, air_low_limit, humidity_low_limit])
+        self.X_max = np.asarray([skin_high_limit, air_high_limit, Rh_high_limit]) #Ta_out_high_limit, Rh_out_high_limit
+        self.X_min = np.asarray([skin_low_limit, air_low_limit, Rh_low_limit]) #Ta_out_low_limit, Rh_out_low_limit
         if simulate_train == True:
             self.filename = self.location + "subjective/" + output + "_" + user + "_" + "PMV"
             skin, Ta, humidity = self.simulate_input_data(3000, 0.1)
@@ -1116,7 +1145,7 @@ class subjectiveSimulator():
                 "Temperature_0m": Ta,
                 "Humidity_0m": humidity,
                 }
-            self.data = pd.DataFrame(self.simulatedData).ix[:,["Skin_0m", "Temperature_0m", "Humidity_0m"]]
+            self.data = pd.DataFrame(self.simulatedData).ix[:,["Skin_0m", "Temperature_0m", "Humidity_0m"]] #"Out_Temperature_0m", "Out_Humidity_0m"
             satisfaction, sensation = self.PMV(self.data)
             self.data["Satisfaction"] = satisfaction
             self.data["Sensation"] =sensation
@@ -1149,6 +1178,7 @@ class subjectiveSimulator():
                 if further_train == False:
                     self.analyze_data_Ta_Rh(data_with_nan)
                     if self.output == "Sensation":
+                        ##used for combined users data: self.analyze_distribution(self.data, figure)
                         self.analyze_data_scatter(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
                         self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
                         self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
@@ -1158,6 +1188,7 @@ class subjectiveSimulator():
                         self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
                         self.analze_data_violin(data_with_nan, "Skin_3m", 0, 0.7)
                     else:
+                        ##used for combined users data: self.analyze_distribution(self.data, figure)
                         self.analyze_data_scatter_h(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
                         self.analyze_data_scatter_h(data_with_nan, "Skin_" , skin_low_limit, skin_high_limit)
                         self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
@@ -1173,7 +1204,7 @@ class subjectiveSimulator():
                 self.simulatedData = {
                 "Skin": (skin - skin_low_limit)/(skin_high_limit - skin_low_limit),
                 "Ta": (Ta - air_low_limit)/(air_high_limit - air_low_limit),
-                "Rh": (humidity - humidity_low_limit)/(humidity_high_limit - humidity_low_limit),
+                "Rh": (humidity - Rh_low_limit)/(Rh_high_limit - Rh_low_limit),
                 # "Out_Ta": (np.random.choice(np.arange(8, 10, 0.5), 1000) 
                 #     - self.Xmin[3])/(self.Xmax[3] - self.Xmin[3]),
                 # "Out_Rh": Rh_out
@@ -1185,7 +1216,7 @@ class subjectiveSimulator():
     
     def simulate_input_data(self, num_data, data_interval):
         # predict humidity based on random selected indoor tempeature and outdoor humidity in certrain ranges 
-        model_Rh = pickle.load(open(self.location + "environment/temperature_" + self.user + "_Humidity_kernel.sav", 'rb'))
+        model_Rh = pickle.load(open(self.location + "environment/temperature_" + self.user + "_RH_kernel.sav", 'rb'))
         Ta = (np.random.choice(np.arange(air_low_limit, air_high_limit, data_interval), num_data) 
             - air_low_limit)/(air_high_limit - air_low_limit)
         Rh_out = (np.random.choice(np.arange(Rh_out_low_limit, Rh_out_high_limit, data_interval),
@@ -1208,7 +1239,7 @@ class subjectiveSimulator():
         skin = model_Skin.predict(self.test_X2).flatten()
         input1 = skin*(skin_high_limit - skin_low_limit) + skin_low_limit
         input2 = Ta*(air_high_limit - air_low_limit) + air_low_limit
-        input3 = humidity*(humidity_high_limit - humidity_low_limit) + humidity_low_limit
+        input3 = humidity*(Rh_high_limit - Rh_low_limit) + Rh_low_limit
         return (input1, input2, input3)
       
 
@@ -1229,19 +1260,21 @@ class subjectiveSimulator():
         
         if self.simulation == True:
             if self.further_train == True:
-                model.load_weights(self.location  + '/subjective/user4_PMV_Real_Satisfaction_ANN.h5')
+                model.load_weights(self.location  + 'subjective/' + self.user + '_PMV_Real_' + self.output + '_ANN.h5')
             else:
-                model.load_weights(self.location  + '/subjective/user4_Satisfaction_ANN.h5')
+                model.load_weights(self.location  + 'subjective/'  + self.user + '_' + self.output + '_ANN.h5')
         else:
             if self.further_train == True:
-                model.load_weights(self.location  + '/subjective/user4_PMV_Satisfaction_ANN.h5')
+                model.load_weights(self.location  + 'subjective/'  + self.user + '_PMV_' + self.output + '_ANN.h5')
                 loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=2)  
                 self.test_acu = loss_and_metrics[1]
             model.fit(self.train_X, self.train_Y, epochs=200, batch_size=2, verbose=0)
             if self.simulate_train == True:
                 model.save_weights(self.location + "subjective/" + self.user + "_PMV_"  + self.output + "_ANN.h5")
-            else:
+            elif self.further_train == True:
                 model.save_weights(self.location + "subjective/" + self.user + "_PMV_Real_"  + self.output + "_ANN.h5")
+            else: 
+                model.save_weights(self.location  + 'subjective/'  + self.user + '_' + self.output + '_ANN.h5')
             self.loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=2)
             self.test_Y = [np.argmax(values) + min(self.Y.flatten()) for values in self.test_Y ]
         classes = model.predict(self.test_X, batch_size=2)      
@@ -1302,7 +1335,7 @@ class subjectiveSimulator():
         output = [-3, -2,-1, 0, 1, 2, 3]
         fig, ax = plt.subplots(figsize=(12,6))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylim(Rh_low_limit, Rh_high_limit)
         ax.set_ylabel("Relative Humidity (%)",  fontsize=18)
         ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
         #ax.set_xlim(18, 31.2)
@@ -1450,6 +1483,37 @@ class subjectiveSimulator():
         h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
         return m, h
 
+    def analyze_distribution(self, data, figure):
+        input_ = "Air"
+        if self.output == "Satisfaction":
+            data = data.loc[data[self.output] > 0]
+            title = input_ + " Temperature Gaussian Distribution for Satisfaction > 0"
+        else:
+            data = data.loc[(data[self.output] > -2) & (data[self.output] < 2)]
+            title = input_ + " Temperature Gaussian Distribution for Slighty Cool, Neutral, Slighty Warm"
+        ax = figure[0]
+        color = figure[1]
+       
+        data = data["Temperature_0m"].tolist()
+        # Fit a normal distribution to the data:
+        mu, std = norm.fit(data)
+
+        # Plot the histogram.
+        plt.hist(data, bins=30, normed=True, alpha=0.1, color=color)
+
+        # Plot the PDF.
+        xmin, xmax = plt.xlim()
+        x = np.linspace(xmin, xmax, 100)
+        p = norm.pdf(x, mu, std)
+        ax.plot(x, p, color, linewidth=2, label=self.user)
+        plt.legend()
+        plt.tight_layout()
+        ax.set_ylabel("Probability")
+        ax.set_xlabel(input_ + " Temperature ($^\circ$C)")
+        ax.set_title(title)
+
+
+
 
     def analze_data_violin(self, data, input_, limit_low, limit_high):
         output = [ -3, -2,-1, 0, 1, 2, 3]
@@ -1457,6 +1521,10 @@ class subjectiveSimulator():
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlim(0, 8)
         ax.set_xlabel('Thermal ' + self.output, fontsize=18)
+        if(self.output == "Satisfaction"):
+            color_list = ["#800000", "r", "#ff8000", "#66ccff", "#33ff33", "#00cc00", "#006600"]
+        else:
+            color_list = [ "b", "#33ffff", "#3399ff", "#33ff66", "#ff8000", "#ff4000", "#D43F3A"]
         if input_ == "Temperature_0m": 
             plot_x = input_
             text = "Air Temperature 1m Average($^\circ$C)"
@@ -1498,10 +1566,18 @@ class subjectiveSimulator():
             else:
                 median.append(statistics.median(data_x))
                 all_data.append(data_x)
-        ax.violinplot(all_data,
-           showmeans=False,
-           showmedians=True)
-        ax.plot(range(1, 8), mean, color="r")
+        # sns.violinplot(data = all_data, ax= ax)
+        #    # showmeans=False,
+        #    # showmedians=True,  ax= ax)
+        violin_parts = ax.violinplot(all_data, showmeans=False, showmedians=True, showextrema=False)
+        j = 0
+        for pc in violin_parts['bodies']:
+            pc.set_color(color_list[j])
+            pc.set_alpha(0.5)
+            # pc.set_facecolor(color_list[j])
+            # pc.set_edgecolor('black')
+            j += 1
+        ax.plot(range(1, 8), median, color='r')
         #ax.plot(range(1, 8), mean, color="b")
         plt.errorbar(range(1, 8), mean, yerr=errors, fmt = 'o', color = 'g')
 
@@ -1513,7 +1589,7 @@ class subjectiveSimulator():
         custom_legend = [Line2D([0], [0], marker= "o",  color='g', 
              markerfacecolor = 'g', markersize="6"),
              Line2D([0], [0],  color='r') ]
-        lengend_list = ["Mean and 0.95 Confidence Interval", "The trend of Mean Skin"]
+        lengend_list = ["Mean and 0.95 Confidence Interval", "The trend of Median Skin"]
         plt.legend(custom_legend, lengend_list , loc='upper left', fontsize=14)   
         plt.tight_layout()
         #legend = ax.legend(loc='lower right')     
@@ -1623,14 +1699,14 @@ class subjectiveSimulator():
         plot_x = "Temperature_0m"
         plot_y = "Humidity_0m"
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.set_ylim(humidity_low_limit, humidity_high_limit)
+        ax.set_ylim(Rh_low_limit, Rh_high_limit)
         ax.set_ylabel("Relative Humidity (%)", fontsize=18)
         ax.set_xlabel('Operative Temperature ($^\circ$C)', fontsize=18)
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlim(air_low_limit, air_high_limit + offset)
         plt.xticks(np.arange(17, air_high_limit, 1.0))
         date_list = data["Date"].unique()
-        marker_list = ["o", "*", "p", ">", "<", "d", "^", ]
+        marker_list = ["o", "*", "p", ">", "<", "d", "^", "x"]
 
         for j in range(len(date_list)):
             for i in range(len(output)):
@@ -1673,7 +1749,7 @@ class subjectiveSimulator():
     def combine_data(self):
         i = 0
         outdoor_list = []
-        marker_list = ["o", "*", "p", ">", "<", "d", "^", ]
+        marker_list = ["o", "*", "p", ">", "<", "d", "^", "x"]
         for tag in self.tags:
             date = tag[6:]
             vote_File = self.location + "voting-" + tag + ".csv"
@@ -1767,6 +1843,11 @@ class subjectiveSimulator():
         return data_vote_skin_air_out, outdoor
 
 
+def get_humidity_ratio(Ta, RH):
+    # 1 atmosphere = 101325 pascal
+    # 1 Celsius = 273.15 Kelvin 
+    H_ratio = [humidity.rh2mixr(RH[i]/100.0, 101325, Ta[i] + 273.15) for i in range(len(Ta))]
+    return H_ratio
 
 
 
@@ -1774,7 +1855,7 @@ class subjectiveSimulator():
 
 def main():
     tags_hu = {"user4" :  ["user4-2018-2-19", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-23"], 
-    "user5" :  ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-23", "user4-2018-3-24"],
+    "user5" :  ["user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19","user5-2018-3-22", "user5-2018-3-25"],
      "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-21", "user6-2018-3-24"]}
     for i in range(5,5):
         user = "user" + str(i)
@@ -1785,15 +1866,23 @@ def main():
         rh_simulator.evaluation()
 
     inSampleTime = '2018-02-10 18:08:00'
-    tags = {"user1" : ["user1-2018-2-20", "user1-2018-2-24", "user1-2018-3-2", "user1-2018-3-19", "user1-2018-3-24", "user1-2018-3-31"],
-    "user2": ["user2-2018-2-20", "user2-2018-2-25", "user2-2018-2-27", "user2-2018-3-2", "user2-2018-3-23", "user2-2018-3-25", "user2-2018-3-31"], 
+    tags = {"user1" : ["user1-2018-2-20", "user1-2018-2-24", "user1-2018-3-2", "user1-2018-3-19", "user1-2018-3-24", "user1-2018-3-31", "user1-2018-4-6"],
+    "user2": ["user2-2018-2-20", "user2-2018-2-25", "user2-2018-2-27", "user2-2018-3-2", "user2-2018-3-23", "user2-2018-3-25", "user2-2018-3-31", "user2-2018-4-6"], 
     "user3": ["user3-2018-2-19", "user3-2018-2-27", "user3-2018-3-2", "user3-2018-3-14", "user3-2018-3-16", "user3-2018-3-17", "user3-2018-3-24"],
     "user4": ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-20", "user4-2018-3-23", "user4-2018-3-24"],
     "user5": ["user5-2018-3-4", "user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19", "user5-2018-3-20", "user5-2018-3-22", "user5-2018-3-25"], 
     "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21", "user6-2018-3-24"]}
 
-    for i in range(4, 4):
+    fig, ax = plt.subplots(figsize=(12,6))
+    color_list = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    for i in [1,2,3,4,5,6]:
         user = "user" + str(i)
+
+        # rh_simulator = HumiditySimulator(user, tags_hu[user], False)
+        # rh_simulator.evaluation()
+
+        # rh_simulator = HumiditySimulator(user, tags_hu[user], True)
+        # rh_simulator.evaluation()
         
         # skin_simulator = skinSimulator(user, tags[user], ["Air Temperature", "Relative Humidity"], "Skin Temperature", False)  
         # skin_simulator.evaluation()
@@ -1801,38 +1890,34 @@ def main():
         # skin_simulator = skinSimulator(user, tags[user], ["Air Temperature", "Relative Humidity"], "Skin Temperature", True)  
         # skin_simulator.evaluation()
 
-        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False)
+        #train with real data
+        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, False, (ax, color_list[i]) )
         # sub_simulator.neural_network("adam")
         # sub_simulator.evaluation("neural_network")
 
-        #train with real data
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, False)
-        sub_simulator.neural_network("adam")
-        sub_simulator.evaluation("neural_network")
+        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, True)
+        # sub_simulator.neural_network("adam")
+        # sub_simulator.evaluation("neural_network")
 
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, True)
-        sub_simulator.neural_network("adam")
-        sub_simulator.evaluation("neural_network")
+        # #train with PMV data
+        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], True, False, False)
+        # sub_simulator.neural_network("adam")
+        # sub_simulator.evaluation("neural_network")  
 
-        #train with PMV data
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], True, False, False)
-        sub_simulator.neural_network("adam")
-        sub_simulator.evaluation("neural_network")  
+        # # train with real data using PMV model
+        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, False)
+        # sub_simulator.neural_network("adam")
+        # sub_simulator.evaluation("neural_network")
 
-        # train with real data using PMV model
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, False)
-        sub_simulator.neural_network("adam")
-        sub_simulator.evaluation("neural_network")
-
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, True)
-        sub_simulator.neural_network("adam")
-        sub_simulator.evaluation("neural_network")
+        # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, True, True)
+        # sub_simulator.neural_network("adam")
+        # sub_simulator.evaluation("neural_network")
 
         # sub_simulator = subjectiveSimulator(user, "Sensation", tags[user])
         # sub_simulator.neural_network("adam")
         # sub_simulator.evaluation("neural_network")
         
-    
+    plt.savefig("csv/air_satisfaction")
     # env_File = [location + "action_16.csv",
     #             location + "environment-outdoor-2018-3-6.csv",
     #             location + "environment-user2-2018-3-6.csv",
@@ -1853,9 +1938,9 @@ def main():
     #plot_observation(data_m, location + "Temperature_Satisfaction_" + tag, "Temperature", "Satisfaction", False, tag)
 
 
-    temp_simulator = TempSimulator(location, env_File, "user4 ", ["Previous Air Temperature", 
-        "Previous Action" ,"outdoor Previous Air Temperature"], "Air Temperature", 
-        location + " envSimulator")
+    # temp_simulator = TempSimulator(location, env_File, "user4 ", ["Previous Air Temperature", 
+    #     "Previous Action" ,"outdoor Previous Air Temperature"], "Air Temperature", 
+    #     location + " envSimulator")
     # env_simulator = envSimulator(location, env_File, "user4 ", ["Previous Relative Humidity", "Previous Action", 
     #     "outdoor Previous Relative Humidity"],
     #   "Relative Humidity", location + "envSimulator")

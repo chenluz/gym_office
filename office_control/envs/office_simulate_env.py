@@ -39,6 +39,8 @@ class OfficeSimulateEnv(gym.Env):
 		self.cur_Ta = 0
 		self.cur_Rh = 0
 		self.cur_Tskin = 0
+		self.out_Ta = 0
+		self.out_Rh = 0
 		self.action = 0
 		self.reward = 0
 		self.outdoor = outdoorSet()
@@ -67,27 +69,31 @@ class OfficeSimulateEnv(gym.Env):
 		reward: float , PMV value
 
 		"""
+		self.step_count += 1
 		# get outdoor temperature and humidity 
-		out_Ta, out_Rh = self.outdoor.get_out(self.step_count)
+		self.out_Ta, self.out_Rh = self.outdoor.get_out(self.step_count)
 
 		# get air temperature and air humidity after action
 		self.action = action
 		pre_Ta = self.cur_Ta
 		pre_Rh = self.cur_Rh
 		pre_Tskin = self.cur_Tskin
-		self.cur_Ta  = self.air.get_air_temp(action, self.cur_Ta, out_Ta)
-		self.cur_Rh  = self.air.get_air_humidity(self.cur_Rh, out_Rh)
-
+		self.cur_Ta  = self.air.get_air_temp(action, pre_Ta, self.out_Ta)
+		self.cur_Rh  = self.air.get_air_humidity(self.cur_Rh, self.out_Rh)
 		# get old skin temperature after action
 		self.cur_Tskin = self.skin.skin_SVR(self.cur_Ta, self.cur_Rh)
 
-		# get thermal satisfaction after action
-		self.reward = self.vote.Satisfaction_neural(self.cur_Tskin, self.cur_Ta, self.cur_Rh)
+		if self.cur_Ta > Ta_max:
+			self.is_terminal = True
+		elif self.cur_Ta < Ta_min:
+			self.is_terminal = True
+		else:
+			# get thermal satisfaction after action
+			self.reward = self.vote.Satisfaction_neural(self.cur_Tskin, self.cur_Ta, self.cur_Rh)
 
 		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh])
 
-		self.step_count += 1
-		if self.step_count > 83:
+		if self.step_count > 82:
 			self.is_terminal = True
 			self.step_count = 0
 		#return ob, reward, self.is_terminal, {}
@@ -96,20 +102,19 @@ class OfficeSimulateEnv(gym.Env):
 
 	def _reset(self):
 		self.is_terminal = False
+		self.out_Ta, self.out_Rh = self.outdoor.get_out(self.step_count)
 		self.cur_Ta = np.random.choice(np.arange(Ta_min, Ta_max, 1))
-		#The higher the temperature, the lower the humidity. 
-		self.cur_Rh = 22 - (self.cur_Ta - 18)/2
-		Tskin_obj = skinTemperature()
-		self.cur_Tskin = Tskin_obj.skin_SVR(self.cur_Ta, self.cur_Rh)
-		state = self.process_state([self.cur_Ta, self.cur_Rh, self.cur_Tskin])
+		self.cur_Rh  = self.air.get_air_humidity(self.cur_Rh, self.out_Rh)
+		self.cur_Tskin = self.skin.skin_SVR(self.cur_Ta, self.cur_Rh)
+		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh])
 		return state
 
 
 	def process_state(self, state):
 		# process state 
-		state[0] = (state[0] - Ta_min)*1.0/(Ta_max - Ta_min) # air temperature
-		state[1] = (state[1] - Rh_min)*1.0/(Rh_max - Rh_min) # relative humidity
-		state[2] = (state[2] - Ts_min)*1.0/(Ts_max - Ts_min) # skin temperature
+		state[0] = (state[2] - Ts_min)*1.0/(Ts_max - Ts_min) # skin temperature
+		state[1] = (state[0] - Ta_min)*1.0/(Ta_max - Ta_min) # air temperature
+		state[2] = (state[1] - Rh_min)*1.0/(Rh_max - Rh_min) # relative humidity
 		return state
 
 
@@ -118,15 +123,15 @@ class OfficeSimulateEnv(gym.Env):
 
 	def my_render(self, model='human', close=False):
 	    with open("render_simulator_4action.csv", 'a', newline='') as csvfile:
-	        fieldnames = ['time', 'action', 'skin_temp_mean', 'skin_temp_deriv', 'air_temp_mean',
-	                    'air_temp_deriv', 'air_humi_mean', 
-	                    'thermal_sensation', 'reward']
+	        fieldnames = ['time', 'action', 'skin_temp', 'air_temp','air_humid', 'out_temp', 'out_humid', 'reward']
 	        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 	        writer.writerow({fieldnames[0]: datetime.datetime.utcnow(), 
 	        	fieldnames[1]:self.action, 
 				fieldnames[2]:self.cur_Tskin, 
 				fieldnames[3]:self.cur_Ta, 
 				fieldnames[4]:self.cur_Rh, 
-				fieldnames[5]:self.reward})
+				fieldnames[5]:self.out_Ta, 
+				fieldnames[6]:self.out_Rh,
+				fieldnames[7]:self.reward})
 
 
