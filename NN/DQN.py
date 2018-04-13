@@ -27,10 +27,16 @@ class DQNAgent:
         # Neural Net for Deep-Q learning Model
         #ref: https://stats.stackexchange.com/questions/181/how-to-choose-the-number-of-hidden-layers-and-nodes-in-a-feedforward-neural-netw
         model = Sequential()
-        model.add(Dense(self.state_size, input_dim=self.state_size, activation='relu'))
-        model.add(Dense(24, activation='relu'))
-        model.add(Dense(self.action_size, activation='relu'))
-        model.compile(loss='categorical_crossentropy', optimizer='sgd')
+        model.add(Dense(self.state_size, input_dim=self.state_size, activation='relu', 
+            kernel_initializer='random_uniform',
+                bias_initializer='zeros'))
+        model.add(Dense(14, activation='relu', 
+            kernel_initializer='random_uniform',
+                bias_initializer='zeros'))
+        model.add(Dense(self.action_size, activation='softmax', 
+            kernel_initializer='random_uniform',
+                bias_initializer='zeros'))
+        model.compile(loss='categorical_crossentropy', optimizer="adam")
  
         # model.compile(loss='mse',
         #               optimizer=Adam(lr=self.learning_rate))
@@ -154,11 +160,10 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
 
 
 
-def test_model(env, agent):
-    model = agent.load("office_simulator-dqn.h5")
-    ob, state = env.get_state(25, 25, 8, 50)   
+def evaluation(env, agent):
+    model = agent.load("office_mmch409-dqn.h5")
+    state = env.reset()
     state = np.reshape(state, [1, env.nS])
-    print(ob)
     target_f = model.predict(state)
     print(target_f)
     print(np.argmax(target_f))

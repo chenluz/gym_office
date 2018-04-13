@@ -32,7 +32,7 @@ Ta_out_max = 22
 class OfficeSimulateEnv(gym.Env):
 
 	def __init__(self):
-		self.nS = 3
+		self.nS = 5
 		self.nA = 4
 		self.is_terminal = False
 		self.step_count = 0
@@ -85,18 +85,20 @@ class OfficeSimulateEnv(gym.Env):
 
 		if self.cur_Ta > Ta_max:
 			self.is_terminal = True
+			self.reward = -3
 		elif self.cur_Ta < Ta_min:
 			self.is_terminal = True
+			self.reward = -3
 		else:
 			# get thermal satisfaction after action
 			self.reward = self.vote.Satisfaction_neural(self.cur_Tskin, self.cur_Ta, self.cur_Rh)
 
-		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh])
+		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh, self.out_Ta, self.out_Rh])
+		self.reward = (self.reward + 3)/6
 
 		if self.step_count > 82:
 			self.is_terminal = True
 			self.step_count = 0
-		#return ob, reward, self.is_terminal, {}
 		return state, self.reward, self.is_terminal, {}
 
 
@@ -106,15 +108,18 @@ class OfficeSimulateEnv(gym.Env):
 		self.cur_Ta = np.random.choice(np.arange(Ta_min, Ta_max, 1))
 		self.cur_Rh  = self.air.get_air_humidity(self.cur_Rh, self.out_Rh)
 		self.cur_Tskin = self.skin.skin_SVR(self.cur_Ta, self.cur_Rh)
-		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh])
+		#print(self.cur_Tskin, self.cur_Ta, self.cur_Rh,self.out_Ta, self.out_Rh)
+		state = self.process_state([self.cur_Tskin, self.cur_Ta, self.cur_Rh,self.out_Ta, self.out_Rh])
 		return state
 
 
 	def process_state(self, state):
 		# process state 
-		state[0] = (state[2] - Ts_min)*1.0/(Ts_max - Ts_min) # skin temperature
-		state[1] = (state[0] - Ta_min)*1.0/(Ta_max - Ta_min) # air temperature
-		state[2] = (state[1] - Rh_min)*1.0/(Rh_max - Rh_min) # relative humidity
+		state[0] = (state[0] - Ts_min)*1.0/(Ts_max - Ts_min) # skin temperature
+		state[1] = (state[1] - Ta_min)*1.0/(Ta_max - Ta_min) # air temperature
+		state[2] = (state[2] - Rh_min)*1.0/(Rh_max - Rh_min) # relative humidity
+		state[3] = (state[3] - Ta_out_min)*1.0/(Ta_out_max - Ta_out_min) # outdoor air temperature
+		state[4] = (state[4] - Rh_out_min)*1.0/(Rh_out_max - Rh_out_min) # outdoor relative humidity
 		return state
 
 

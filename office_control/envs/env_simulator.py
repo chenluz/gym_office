@@ -11,7 +11,7 @@ from sklearn.kernel_ridge import KernelRidge
 from sklearn.svm import SVR
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
+from scipy.stats import norm, halfnorm, truncnorm, multivariate_normal
 from scipy.stats import pearsonr
 from sklearn import neighbors
 import statsmodels.api as sm
@@ -1070,6 +1070,7 @@ class skinSimulator():
         return data, outdoor_list
 
 
+
     def process_data_Skin_Air(self, skin_File, air_File, outdoor_File):
         """"
         Prcoess Air temperature and Relative Humidity 
@@ -1123,7 +1124,7 @@ class subjectiveSimulator():
         filename: str, specify the model name and png name that will be saved 
 
     """
-    def __init__(self, user, output, tags,  simulate_train = False, further_train= False, simulation = False, figure=None): 
+    def __init__(self, user, output, tags,  simulate_train = False, further_train= False, simulation = False, figure=None, is_3_scale=False): 
         self.simulation = simulation
         self.simulate_train = simulate_train
         self.further_train = further_train
@@ -1131,12 +1132,12 @@ class subjectiveSimulator():
         self.tags = tags
         self.user  = user
         self.output = output
-        self.input = ["Skin_0m", "Temperature_0m", "Humidity_0m"]#, , "Out_Temperature_0m", "Out_Humidity_0m"
+        self.input = ["Skin_0m", "Temperature_0m", "Humidity_0m" ]#, "Out_Temperature_0m", "Out_Humidity_0m"
         self.pred_Y = None
         self.loss_and_metrics  = None
         self.test_acu = 0
-        self.X_max = np.asarray([skin_high_limit, air_high_limit, Rh_high_limit]) #Ta_out_high_limit, Rh_out_high_limit
-        self.X_min = np.asarray([skin_low_limit, air_low_limit, Rh_low_limit]) #Ta_out_low_limit, Rh_out_low_limit
+        self.X_max = np.asarray([skin_high_limit, air_high_limit, Rh_high_limit]) #, Ta_out_high_limit, Rh_out_high_limit
+        self.X_min = np.asarray([skin_low_limit, air_low_limit, Rh_low_limit]) #, air_low_limit, Rh_low_limit, Ta_out_low_limit, Rh_out_low_limit
         if simulate_train == True:
             self.filename = self.location + "subjective/" + output + "_" + user + "_" + "PMV"
             skin, Ta, humidity = self.simulate_input_data(3000, 0.1)
@@ -1162,14 +1163,26 @@ class subjectiveSimulator():
         seed(1)
         X_scaled = (self.X - self.X_min)/(self.X_max - self.X_min)
         ##### encode class values as integers
-        # add -3 and 3 at front to get 7 lable
-        self.Y = np.array(np.append(self.data[output].as_matrix(), [-3, 3])).reshape(-1, 1)
+       
+        if output == "Satisfaction":
+             # add -3 and 3 at front to get 7 lable
+            self.Y = np.array(np.append(self.data[output].as_matrix(), [-3, 3])).reshape(-1, 1)
+        else:
+            # group output to three labels:
+            self.data.loc[self.data[output] < 0, output] = -1
+            self.data.loc[self.data[output] > 0, output] = 1
+            self.Y = np.array(self.data[output].as_matrix()).reshape(-1, 1)
+        
+
         encoder = LabelEncoder()
         encoder.fit(self.Y)
         encoded_Y = encoder.transform(self.Y)
         ### convert integers to dummy variables (i.e. one hot encoded)
-        #remove the appended fake data
-        dummy_y = np_utils.to_categorical(encoded_Y)[:-2]
+        if output == "Satisfaction":
+            #remove the appended fake data
+            dummy_y = np_utils.to_categorical(encoded_Y)[:-2]
+        else:
+            dummy_y = np_utils.to_categorical(encoded_Y)
         self.lable_num = dummy_y.shape[1]
         self.train_X, self.test_X, self.train_Y, self.test_Y = train_test_split(
             X_scaled, dummy_y, test_size=0.3, random_state=42)
@@ -1178,17 +1191,21 @@ class subjectiveSimulator():
                 if further_train == False:
                     self.analyze_data_Ta_Rh(data_with_nan)
                     if self.output == "Sensation":
-                        ##used for combined users data: self.analyze_distribution(self.data, figure)
-                        self.analyze_data_scatter(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
-                        self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
-                        self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
-                        self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
-                        self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
-                        self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
-                        self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
-                        self.analze_data_violin(data_with_nan, "Skin_3m", 0, 0.7)
+                        print("hehe")
+                        ##used for combined users data:  self.analyze_distribution(self.data, figure)
+                        # self.analyze_three_distribution(self.data)
+                        # self.analyze_data_scatter(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
+                        # self.analyze_data_scatter(data_with_nan, "Skin_" ,skin_low_limit, skin_high_limit)
+                        # self.analze_data_violin(data_with_nan, "Temperature_0m", air_low_limit, air_high_limit)
+                        # self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
+                        # self.analze_data_violin(data_with_nan, "Temperature_5m", 0, 1.8)
+                        # self.analze_data_violin(data_with_nan, "Skin_5m", 0, 1.1)
+                        # self.analze_data_violin(data_with_nan, "Temperature_3m", 0, 1.1)
+                        # self.analze_data_violin(data_with_nan, "Skin_3m", 0, 0.7)
                     else:
-                        ##used for combined users data: self.analyze_distribution(self.data, figure)
+                        ##used for combined users data: 
+                        self.analyze_distribution(self.data, figure)
+                        return
                         self.analyze_data_scatter_h(data_with_nan,"Temperature_", air_low_limit, air_high_limit)
                         self.analyze_data_scatter_h(data_with_nan, "Skin_" , skin_low_limit, skin_high_limit)
                         self.analze_data_violin(data_with_nan, "Skin_0m", skin_low_limit, skin_high_limit)
@@ -1250,9 +1267,9 @@ class subjectiveSimulator():
         
         model = Sequential()
         model.add(Dense(len(self.input), input_dim=len(self.input), activation='relu'))
-        model.add(Dense(10, activation='relu'))
-        model.add(Dense(20, activation='relu'))
-        model.add(Dense(7, activation='softmax'))
+        model.add(Dense(8, activation='relu'))
+        model.add(Dense(8, activation='relu'))
+        model.add(Dense(3, activation='softmax'))
         # Compile model
         model.compile(loss='categorical_crossentropy',
                   optimizer=optimizer, 
@@ -1276,6 +1293,7 @@ class subjectiveSimulator():
             else: 
                 model.save_weights(self.location  + 'subjective/'  + self.user + '_' + self.output + '_ANN.h5')
             self.loss_and_metrics = model.evaluate(self.test_X,  self.test_Y, batch_size=2)
+            print(self.loss_and_metrics)
             self.test_Y = [np.argmax(values) + min(self.Y.flatten()) for values in self.test_Y ]
         classes = model.predict(self.test_X, batch_size=2)      
         self.pred_Y = [np.argmax(values) + min(self.Y.flatten()) for values in classes]
@@ -1327,7 +1345,6 @@ class subjectiveSimulator():
         plot_x = "Temperature_0m"
         plot_y = "Humidity_0m"
         test_df["Prediction"] = self.pred_Y
-         
         if(self.output == "Satisfaction"):
             color_list = ["#800000", "r", "#ff8000", "#66ccff", "#33ff33", "#00cc00", "#006600"]
         else:
@@ -1483,29 +1500,101 @@ class subjectiveSimulator():
         h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
         return m, h
 
-    def analyze_distribution(self, data, figure):
-        input_ = "Air"
+
+    def analyze_three_distribution(self, data):
+        fig, ax = plt.subplots(figsize=(12,6))
+        input_ = "Skin"
         if self.output == "Satisfaction":
-            data = data.loc[data[self.output] > 0]
+            comfort_data = data.loc[data[self.output] > 0]
             title = input_ + " Temperature Gaussian Distribution for Satisfaction > 0"
         else:
-            data = data.loc[(data[self.output] > -2) & (data[self.output] < 2)]
-            title = input_ + " Temperature Gaussian Distribution for Slighty Cool, Neutral, Slighty Warm"
+            comfort_data = data.loc[(data[self.output] == 0)]["Humidity_0m"].tolist()
+            hot =  data.loc[(data[self.output] > 0)]["Humidity_0m"].tolist()
+            cold =  data.loc[(data[self.output] < 0)]["Humidity_0m"].tolist()
+            title = self.user + " " + input_ + " Temperature Gaussian Distribution for Cool (< 0), Comfort (= 0), Warm (> 0)"
+ 
+        # Fit a normal distribution to the data:
+        mu_comfort, std_comfort = norm.fit(comfort_data)
+       
+        x = np.linspace(skin_low_limit + 1, skin_high_limit, 200)
+    
+        mu_cold, std_cold = halfnorm.fit(cold)
+        plt.hist(cold, bins=10, normed=True, alpha=0.1, color='b')
+        # Plot the PDF.
+        p = halfnorm.pdf(x, mu_cold, std_cold)
+        ax.plot(x, p, 'b', linewidth=2, label="Cool(<0), n=" + str(len(cold)))
+
+         #Plot the histogram.
+        plt.hist(comfort_data, bins=20, normed=True, alpha=0.1, color='g')
+        # Plot the PDF.
+        p = norm.pdf(x, mu_comfort, std_comfort)
+        ax.plot(x, p, 'g', linewidth=2, label="Comfort(0), n=" + str(len(comfort_data)))
+
+
+        mu_hot, std_hot = halfnorm.fit([-i for i in hot])
+
+        plt.hist(hot, bins=20, normed=True, alpha=0.1, color='r')
+         # Plot the PDF.
+        p = halfnorm.pdf([-i for i in x], mu_hot, std_hot)
+        # x, y = np.mgrid[-1:1:.01, -1:1:.01]
+        # pos = np.empty(x.shape + (2,))
+        # pos[:, :, 0] = x; pos[:, :, 1] = y
+        # rv = multivariate_normal([0.5, -0.2], [[2.0, 0.3], [0.3, 0.5]])
+        # plt.contourf(x, y, rv.pdf(pos))
+        # plt.show()
+
+        # ax.plot(x, p, 'r', linewidth=2, label="Warm(>0), n=" + str(len(hot)))
+        # ax.set_xlim(skin_low_limit + 1, skin_high_limit)
+        # ax.set_ylim(0, 0.8)
+        # plt.legend()
+        # #plt.tight_layout()
+        # ax.set_ylabel("Probability")
+        # ax.set_xlabel(input_ + " Temperature ($^\circ$C)")
+        # plt.title(title)
+        # plt.savefig("csv/" + self.user + "_skin_sensation")
+        accurate = 0
+        data = [cold, comfort_data, hot]
+        for i in range(3):
+            density_list = np.transpose([halfnorm.pdf(data[i], mu_cold, std_cold), 
+                        norm.pdf(data[i], mu_comfort, std_comfort), 
+                        halfnorm.pdf(data[i], mu_hot, std_hot)])
+            for item in density_list:
+                if np.argmax(item) == i:
+                    accurate += 1
+        print(self.user + ":" + str(accurate*1.0/(len(cold) + len(comfort_data) + len(hot))))
+
+
+
+    def analyze_distribution(self, data, figure):
+        input_ = "Skin"
+        if self.output == "Satisfaction":
+            comfort_data = data.loc[data[self.output] > 0]
+            title = input_ + " Temperature Gaussian Distribution for Satisfaction > 0"
+        else:
+            comfort_data = data.loc[(data[self.output] == 0 )]
+            title = input_ + " Temperature Gaussian Distribution for Neutral Sensation"
         ax = figure[0]
         color = figure[1]
        
-        data = data["Temperature_0m"].tolist()
+        comfort_data = comfort_data["Skin_0m"].tolist()
         # Fit a normal distribution to the data:
-        mu, std = norm.fit(data)
+        mu, std = norm.fit(comfort_data)
 
         # Plot the histogram.
-        plt.hist(data, bins=30, normed=True, alpha=0.1, color=color)
+        plt.hist(comfort_data, bins=30, normed=True, alpha=0.1, color=color)
 
         # Plot the PDF.
         xmin, xmax = plt.xlim()
-        x = np.linspace(xmin, xmax, 100)
+        x = np.linspace(26, 36, 100)
         p = norm.pdf(x, mu, std)
-        ax.plot(x, p, color, linewidth=2, label=self.user)
+        ax.plot(x, p, color, linewidth=2, label=self.user + " n=" + str(len(comfort_data)) + ", total n=" + str(len(data.index.tolist())))
+
+
+        # if(self.user == "user4"):
+        #     x = np.linspace(xmin, xmax, 200)
+        #     p = norm.pdf(x, 24.2, 2.5)
+        #     ax.plot(x, p, "#000080", linewidth=2, label="All three users")
+        ax.set_ylim(0, 0.8)
         plt.legend()
         plt.tight_layout()
         ax.set_ylabel("Probability")
@@ -1871,11 +1960,11 @@ def main():
     "user3": ["user3-2018-2-19", "user3-2018-2-27", "user3-2018-3-2", "user3-2018-3-14", "user3-2018-3-16", "user3-2018-3-17", "user3-2018-3-24"],
     "user4": ["user4-2018-2-19", "user4-2018-2-25", "user4-2018-3-8", "user4-2018-3-10", "user4-2018-3-20", "user4-2018-3-23", "user4-2018-3-24"],
     "user5": ["user5-2018-3-4", "user5-2018-3-8", "user5-2018-3-10", "user5-2018-3-19", "user5-2018-3-20", "user5-2018-3-22", "user5-2018-3-25"], 
-    "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21", "user6-2018-3-24"]}
+    "user6": ["user6-2018-2-22", "user6-2018-2-24", "user6-2018-3-4", "user6-2018-3-20", "user6-2018-3-21", "user6-2018-3-24", "user6-2018-4-11"]}
 
     fig, ax = plt.subplots(figsize=(12,6))
-    color_list = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
-    for i in [1,2,3,4,5,6]:
+    color_list = ['b', 'g', 'r', 'c', 'm', 'y', 'k'] #'#C0C0C0', '#A9A9A9', '#808080', 
+    for i in [3, 4, 5]: #
         user = "user" + str(i)
 
         # rh_simulator = HumiditySimulator(user, tags_hu[user], False)
@@ -1891,9 +1980,14 @@ def main():
         # skin_simulator.evaluation()
 
         #train with real data
-        sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, False, (ax, color_list[i]) )
-        # sub_simulator.neural_network("adam")
-        # sub_simulator.evaluation("neural_network")
+        sub_simulator = subjectiveSimulator(user, "Sensation", tags[user], False, False, False, (ax, color_list[i]) )
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")
+
+        sub_simulator = subjectiveSimulator(user, "Sensation", tags[user], False, False, True)
+        sub_simulator.neural_network("adam")
+        sub_simulator.evaluation("neural_network")
+
 
         # sub_simulator = subjectiveSimulator(user, "Satisfaction", tags[user], False, False, True)
         # sub_simulator.neural_network("adam")
@@ -1917,7 +2011,7 @@ def main():
         # sub_simulator.neural_network("adam")
         # sub_simulator.evaluation("neural_network")
         
-    plt.savefig("csv/air_satisfaction")
+   # plt.savefig("csv/skin_satisfaction")
     # env_File = [location + "action_16.csv",
     #             location + "environment-outdoor-2018-3-6.csv",
     #             location + "environment-user2-2018-3-6.csv",
