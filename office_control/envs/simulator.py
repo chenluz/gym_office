@@ -63,6 +63,14 @@ class airEnviroment():
         # input should be indoor, action outdoor
         Ta = self.temp_model.predict([_input]).flatten()[0]
         result = Ta*(Ta_action_max - Ta_action_min) + Ta_action_min
+        if action == 3:
+            result = 8/pre_Ta + pre_Ta + 0.01*pre_out_Ta
+        elif action == 2:
+            result = 6/pre_Ta + pre_Ta + 0.01*pre_out_Ta
+        elif action == 1:
+            result = 2/pre_Ta + pre_Ta + 0.01*pre_out_Ta
+        else: 
+            result = pre_Ta - 0.01*(10 - pre_out_Ta)
         return result
 
     def process_state_air(self, action, pre_Ta, pre_out_Ta):
@@ -374,7 +382,7 @@ class feedback():
         return np.array([cur_Ts, cur_Ta, cur_Rh])
 
 
-    def comfPMV(self, ta, tr, rh,  clo, vel=0.1, met =1.1, wme = 0):
+    def comfPMV(self, ta, tr, rh,  clo, met =1.1, vel=0.1, wme = 0):
         """
         ref:https://github.com/CenterForTheBuiltEnvironment/comfort_tool/blob/master/contrib/comfort_models.py
         returns [pmv, ppd]

@@ -160,7 +160,11 @@ class InfluxDB():
 
         #3. Get lastest voting in last past_time minutes
         #obs_dict["thermal_satisfaction"] = self.get_vote_db('value', 'thermal_satisfaction', past_time)
-        obs_dict["thermal_sensation"] = self.get_vote_db('value', 'thermal_sensation', past_time)
+        value = self.get_vote_db('value', 'thermal_sensation', past_time)
+        if np.isnan(value):
+            obs_dict["thermal_sensation"] = 0
+        else:
+            obs_dict["thermal_sensation"] = value
 
         return obs_dict
 

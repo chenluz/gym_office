@@ -18,7 +18,7 @@ class OfficeEnv(gym.Env):
 	def __init__(self, response_time = 300):
 		self.plugwise = plugWise("128.2.108.76", 8080)
 		self.db = InfluxDB(host='localhost', port=8086, username='chenlu',
-            password='research', database='CMUMM409office')
+            password='research', database='IWtest')
 		self.nA = len(Action_Dict_4)
 		self.nS = 6
 		self.step_counter = 20
@@ -157,7 +157,7 @@ Action_Dict = {0: [0, 0, 0, 0], 1: [0, 0, 0, 1], 2: [0, 0, 1, 0], 3:[0, 1, 0, 0]
 				8: [0, 1, 1, 0], 9: [1, 0, 1, 0], 10: [1, 1, 0, 0], 11:[0, 1, 1, 1],
 				12: [1, 0 ,1, 1], 13: [1, 1, 0, 1], 14: [1, 1, 1, 0], 15:[1, 1, 1, 1]}
 
-Action_Dict_4 = {0: [0, 0, 0, 0], 1: [1, 1, 0, 0], 2: [0, 0, 2, 2], 3:[1, 1, 1, 1]}
+Action_Dict_4 = {0: [0, 0, 0, 0], 1: [1, 1, 0, 0], 2: [0, 0, 1, 1], 3:[1, 1, 1, 1]}
 
 
 Obser_Order = ['skin_temp_mean', 'skin_temp_deriv', 'air_temp_mean',
