@@ -8,7 +8,7 @@ from keras.optimizers import Adam
 from keras import backend as K
 from lib import plotting
 
-EPISODES = 5000
+len_episodes = 200
 
 
 class DQNAgent:
@@ -100,7 +100,7 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
 
         #policy = make_epsilon_greedy_policy(agent, epsilon, env.nA)
        
-        for t in range(200):
+        for t in range(len_episodes):
             #action_probs = policy(state)
             #action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
             ## Decide action
@@ -118,28 +118,31 @@ def q_learning(env, agent, num_episodes, batch_size, epsilon, epsilon_min, epsil
             agent.remember(state, action, reward, next_state, done)
             ## make next_state the new current state for the next frame.
             state = next_state
-            if done:
-                if epsilon > epsilon_min and i_episode > 0:
-                    epsilon *= epsilon_decay
-                print("episode: {}/{}, score: {}, e: {:.2}"
-                      .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
-                if(i_episode%500 == 0):
-                    agent.save("pmv-ddqn" + str(i_episode) + ".h5")  
+            if done: 
                 break
             if len(agent.memory) > batch_size:
-                    agent.replay(batch_size)    
-    agent.save("pmv-ddqn" + str(i_episode) + ".h5")           
+                    agent.replay(batch_size)  
+        # change epsilon after every ## episode
+        if(i_episode%10 == 0 and i_episode > 0 and i_episode < 1000) or (i_episode%2 == 0 and i_episode >= 1000):
+            if epsilon > epsilon_min:
+                epsilon *= epsilon_decay
+        print("episode: {}/{}, score: {}, e: {:.2}"
+            .format(i_episode, num_episodes,  stats.episode_rewards[i_episode], epsilon))
+        if(i_episode%200 == 0):
+            agent.save("pmv-ddqn" + str(i_episode) + ".h5")   
+    agent.save("pmv-ddqn-final" + ".h5")           
 
     return stats
 
 
 
 def evaluation(env, agent):
-    model = agent.load("pmv-ddqn.h5")
-    state = [29, 35]
-    state = env.process_state(state)
-    #env._print()
-    state = np.reshape(state, [1, env.nS])
-    target_f = model.predict(state)
-    print(target_f)
-    print(np.argmax(target_f))
+    model = agent.load("pmv-ddqn0-reset-minormax-PMV-temperature-onlyvariable.h5")
+    for Ta in range(17, 30):
+        state = [Ta, 35]
+        state = env.process_state(state)
+        #env._print()
+        state = np.reshape(state, [1, env.nS])
+        target_f = model.predict(state)
+        print(target_f)
+        print(np.argmax(target_f))
